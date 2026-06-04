@@ -520,6 +520,10 @@ export default function AssessmentWorkspace() {
           autoPlay
           playsInline
           onEnded={handleVideoEnded}
+          onError={() => {
+            setVideoError(true);
+            setShowOverlay(true);
+          }}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
             activeVideoLayer === 'A' ? 'opacity-100 z-10' : 'opacity-0 z-0'
           }`}
@@ -532,6 +536,10 @@ export default function AssessmentWorkspace() {
           autoPlay
           playsInline
           onEnded={handleVideoEnded}
+          onError={() => {
+            setVideoError(true);
+            setShowOverlay(true);
+          }}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
             activeVideoLayer === 'B' ? 'opacity-100 z-10' : 'opacity-0 z-0'
           }`}
