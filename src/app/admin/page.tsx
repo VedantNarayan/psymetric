@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { 
   BarChart3, Settings, Video, Upload, Shield, 
   Trash2, Plus, Sparkles, Sliders, Users, 
-  Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2
+  Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2, Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -17,6 +17,12 @@ export default function AdminConsole() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<'analytics' | 'scenarios'>('analytics');
+
+  // Editing Questions State
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [editQuestionText, setEditQuestionText] = useState('');
+  const [editShowAtSeconds, setEditShowAtSeconds] = useState<number>(6);
+  const [editOptions, setEditOptions] = useState<any[]>([]);
 
   // Analytics States
   const [stats, setStats] = useState({
@@ -404,6 +410,80 @@ export default function AdminConsole() {
     }
   };
 
+  const handleStartEdit = (q: any) => {
+    setEditingQuestionId(q.id);
+    setEditQuestionText(q.question_text);
+    setEditShowAtSeconds(q.show_at_seconds || 0);
+    const sortedOpts = [...(q.options || [])].sort((a: any, b: any) => a.option_letter.localeCompare(b.option_letter));
+    setEditOptions(sortedOpts.map(opt => ({
+      id: opt.id,
+      letter: opt.option_letter,
+      text: opt.option_text,
+      dimensions: opt.target_dimension ? opt.target_dimension.split(',').map((d: string) => d.trim()).filter(Boolean) : [],
+      weight: opt.intensity_weight
+    })));
+  };
+
+  const handleCancelEdit = () => {
+    setEditingQuestionId(null);
+    setEditQuestionText('');
+    setEditShowAtSeconds(6);
+    setEditOptions([]);
+  };
+
+  const handleSaveQuestionEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingQuestionId) return;
+
+    if (!editQuestionText.trim()) {
+      alert('Question Prompt cannot be empty.');
+      return;
+    }
+    for (const opt of editOptions) {
+      if (!opt.text.trim()) {
+        alert(`Option ${opt.letter} cannot be empty.`);
+        return;
+      }
+      if (opt.dimensions.length === 0) {
+        alert(`Option ${opt.letter} must have at least one Holland code dimension selected.`);
+        return;
+      }
+    }
+
+    try {
+      const { error: qError } = await supabase
+        .from('questions')
+        .update({
+          question_text: editQuestionText.trim(),
+          show_at_seconds: Number(editShowAtSeconds) || 0
+        })
+        .eq('id', editingQuestionId);
+
+      if (qError) throw qError;
+
+      for (const opt of editOptions) {
+        const { error: optError } = await supabase
+          .from('options')
+          .update({
+            option_text: opt.text.trim(),
+            target_dimension: opt.dimensions.join(', '),
+            intensity_weight: Number(opt.weight)
+          })
+          .eq('id', opt.id);
+
+        if (optError) throw optError;
+      }
+
+      alert('Question and options updated successfully!');
+      setEditingQuestionId(null);
+      setEditQuestionText('');
+      setEditOptions([]);
+      await loadScenarios();
+    } catch (err: any) {
+      alert('Failed to update question: ' + err.message);
+    }
+  };
+
   const handleDeleteQuestion = async (qId: string) => {
     if (!confirm('Are you sure you want to delete this question? This will remove all associated responses.')) return;
     try {
@@ -687,45 +767,202 @@ export default function AdminConsole() {
                         <div className="space-y-6">
                           {selectedScenario.questions
                             .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
-                            .map((q: any, qIdx: number) => (
-                              <div key={q.id} className="p-5 rounded-2xl bg-black/35 border border-zinc-900/60 space-y-4">
-                                <div className="flex justify-between items-start gap-4">
-                                  <div>
-                                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
-                                      Question Order #{q.sequence_order || qIdx + 1} {q.show_at_seconds !== undefined && `• Trigger at ${q.show_at_seconds}s`}
-                                    </span>
-                                    <h3 className="text-xs font-bold text-zinc-200 leading-relaxed">{q.question_text}</h3>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteQuestion(q.id)}
-                                    className="p-1.5 rounded-lg bg-red-950/20 border border-red-500/20 text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors shrink-0"
+                            .map((q: any, qIdx: number) => {
+                              const isEditing = editingQuestionId === q.id;
+                              
+                              if (isEditing) {
+                                return (
+                                  <form 
+                                    key={q.id}
+                                    onSubmit={handleSaveQuestionEdit}
+                                    className="p-5 rounded-2xl bg-black/45 border border-teal-500/30 space-y-4 shadow-[0_0_15px_rgba(0,245,212,0.05)]"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
+                                    <div className="flex justify-between items-center border-b border-zinc-900/40 pb-2">
+                                      <span className="text-[10px] font-bold text-teal-400 uppercase tracking-widest block">
+                                        Editing Question #{q.sequence_order || qIdx + 1}
+                                      </span>
+                                      <div className="flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={handleCancelEdit}
+                                          className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white text-[10px] font-bold transition-colors cursor-pointer"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="submit"
+                                          className="px-3 py-1.5 rounded-lg bg-teal-500/15 border border-teal-500/35 text-teal-400 hover:bg-teal-500/25 hover:border-teal-500/50 text-[10px] font-bold transition-all shadow-[0_0_8px_rgba(0,245,212,0.1)] cursor-pointer"
+                                        >
+                                          Save
+                                        </button>
+                                      </div>
+                                    </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
-                                  {(q.options || [])
-                                    .sort((a: any, b: any) => a.option_letter.localeCompare(b.option_letter))
-                                    .map((opt: any) => (
-                                      <div key={opt.id} className="p-3 rounded-xl bg-black/20 border border-zinc-900 flex gap-2 items-start">
-                                        <span className="w-5 h-5 rounded bg-zinc-950 border border-zinc-800 text-zinc-500 font-bold flex items-center justify-center shrink-0">
-                                          {opt.option_letter}
-                                        </span>
-                                        <div className="space-y-1">
-                                          <p className="text-zinc-300 font-medium leading-relaxed">{opt.option_text}</p>
-                                          <div className="flex gap-2 items-center text-[9px]">
-                                            <span className="text-teal-400 font-semibold">{opt.target_dimension}</span>
-                                            <span className="text-zinc-600">•</span>
-                                            <span className="text-purple-400 font-semibold">Weight: {opt.intensity_weight}</span>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                                      <div className="md:col-span-3 space-y-1">
+                                        <label className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
+                                        <textarea
+                                          required
+                                          rows={2}
+                                          value={editQuestionText}
+                                          onChange={(e) => setEditQuestionText(e.target.value)}
+                                          className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400 text-xs"
+                                        />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider block">Show at (seconds)</label>
+                                        <input
+                                          type="number"
+                                          required
+                                          min="0"
+                                          max="300"
+                                          value={editShowAtSeconds}
+                                          onChange={(e) => setEditShowAtSeconds(Number(e.target.value))}
+                                          className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400 text-xs"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                      <h3 className="font-bold text-zinc-300 text-[10px] uppercase tracking-wider border-b border-zinc-900/40 pb-2">Map Choices (A, B, C, D)</h3>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {editOptions.map((opt, optIndex) => (
+                                          <div key={opt.letter} className="p-4 rounded-2xl bg-black/20 border border-zinc-900 space-y-3">
+                                            <div className="flex justify-between items-center">
+                                              <span className="font-bold text-teal-400 text-xs">Choice {opt.letter}</span>
+                                            </div>
+
+                                            <input
+                                              type="text"
+                                              required
+                                              placeholder={`Text for option ${opt.letter}`}
+                                              value={opt.text}
+                                              onChange={(e) => {
+                                                const updated = [...editOptions];
+                                                updated[optIndex] = { ...updated[optIndex], text: e.target.value };
+                                                setEditOptions(updated);
+                                              }}
+                                              className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-teal-400 text-xs"
+                                            />
+
+                                            <div className="space-y-2">
+                                              <label className="text-[9px] text-zinc-500 uppercase font-semibold block">Holland Code (Select Multiple)</label>
+                                              <div className="flex flex-wrap gap-1.5">
+                                                {[
+                                                  { name: 'Realistic', code: 'R' },
+                                                  { name: 'Investigative', code: 'I' },
+                                                  { name: 'Artistic', code: 'A' },
+                                                  { name: 'Social', code: 'S' },
+                                                  { name: 'Enterprising', code: 'E' },
+                                                  { name: 'Conventional', code: 'C' }
+                                                ].map(dim => {
+                                                  const isSelected = opt.dimensions.includes(dim.name);
+                                                  return (
+                                                    <button
+                                                      key={dim.name}
+                                                      type="button"
+                                                      onClick={() => {
+                                                        const updated = [...editOptions];
+                                                        const currentDims = updated[optIndex].dimensions;
+                                                        let newDims;
+                                                        if (currentDims.includes(dim.name)) {
+                                                          newDims = currentDims.filter((d: string) => d !== dim.name);
+                                                        } else {
+                                                          newDims = [...currentDims, dim.name];
+                                                        }
+                                                        updated[optIndex] = { ...updated[optIndex], dimensions: newDims };
+                                                        setEditOptions(updated);
+                                                      }}
+                                                      className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                                                        isSelected
+                                                          ? 'bg-teal-500/10 border-teal-500 text-teal-400 shadow-[0_0_8px_rgba(0,245,212,0.1)]'
+                                                          : 'bg-black/30 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                                                      }`}
+                                                      title={dim.name}
+                                                    >
+                                                      {dim.code}
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+
+                                            <div className="space-y-1">
+                                              <div className="flex justify-between items-center text-[9px] text-zinc-500">
+                                                <span className="uppercase font-semibold">Intensity Weight</span>
+                                                <span className="font-mono text-purple-400 font-bold">{opt.weight}</span>
+                                              </div>
+                                              <input
+                                                type="range"
+                                                min="0.1"
+                                                max="1.0"
+                                                step="0.05"
+                                                value={opt.weight}
+                                                onChange={(e) => {
+                                                  const updated = [...editOptions];
+                                                  updated[optIndex] = { ...updated[optIndex], weight: Number(e.target.value) };
+                                                  setEditOptions(updated);
+                                                }}
+                                                className="w-full h-8 accent-teal-400"
+                                              />
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </form>
+                                );
+                              }
+
+                              return (
+                                <div key={q.id} className="p-5 rounded-2xl bg-black/35 border border-zinc-900/60 space-y-4">
+                                  <div className="flex justify-between items-start gap-4">
+                                    <div>
+                                      <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
+                                        Question Order #{q.sequence_order || qIdx + 1} {q.show_at_seconds !== undefined && `• Trigger at ${q.show_at_seconds}s`}
+                                      </span>
+                                      <h3 className="text-xs font-bold text-zinc-200 leading-relaxed">{q.question_text}</h3>
+                                    </div>
+                                    <div className="flex gap-2 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEdit(q)}
+                                        className="p-1.5 rounded-lg bg-teal-950/20 border border-teal-500/20 text-teal-400 hover:bg-teal-900/20 hover:text-teal-300 transition-colors shrink-0"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteQuestion(q.id)}
+                                        className="p-1.5 rounded-lg bg-red-950/20 border border-red-500/20 text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors shrink-0"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
+                                    {(q.options || [])
+                                      .sort((a: any, b: any) => a.option_letter.localeCompare(b.option_letter))
+                                      .map((opt: any) => (
+                                        <div key={opt.id} className="p-3 rounded-xl bg-black/20 border border-zinc-900 flex gap-2 items-start">
+                                          <span className="w-5 h-5 rounded bg-zinc-950 border border-zinc-800 text-zinc-500 font-bold flex items-center justify-center shrink-0">
+                                            {opt.option_letter}
+                                          </span>
+                                          <div className="space-y-1">
+                                            <p className="text-zinc-300 font-medium leading-relaxed">{opt.option_text}</p>
+                                            <div className="flex gap-2 items-center text-[9px]">
+                                              <span className="text-teal-400 font-semibold">{opt.target_dimension}</span>
+                                              <span className="text-zinc-600">•</span>
+                                              <span className="text-purple-400 font-semibold">Weight: {opt.intensity_weight}</span>
+                                            </div>
                                           </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                         </div>
                       ) : (
                         <div className="text-center py-8 text-zinc-500 text-xs">
