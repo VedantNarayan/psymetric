@@ -63,6 +63,10 @@ export default function AssessmentWorkspace() {
   const [generatingReport, setGeneratingReport] = useState(false);
   const [report, setReport] = useState<any>(null);
 
+  // Video overlay state
+  const [showOverlay, setShowOverlay] = useState(false);
+  const lastScenarioId = useRef<string | null>(null);
+
   // Check authentication & initialize session
   useEffect(() => {
     const initSession = async () => {
@@ -122,6 +126,31 @@ export default function AssessmentWorkspace() {
 
     initSession();
   }, [router]);
+
+  // Synchronize overlay state based on scenario transitions
+  useEffect(() => {
+    if (currentScenario) {
+      if (currentScenario.id !== lastScenarioId.current) {
+        setShowOverlay(false);
+        lastScenarioId.current = currentScenario.id;
+        if (videoRefA.current) videoRefA.current.loop = false;
+        if (videoRefB.current) videoRefB.current.loop = false;
+      } else {
+        setShowOverlay(true);
+      }
+    }
+  }, [currentScenario]);
+
+  const handleVideoEnded = () => {
+    setShowOverlay(true);
+    if (activeVideoLayer === 'A' && videoRefA.current) {
+      videoRefA.current.loop = true;
+      videoRefA.current.play().catch(() => {});
+    } else if (activeVideoLayer === 'B' && videoRefB.current) {
+      videoRefB.current.loop = true;
+      videoRefB.current.play().catch(() => {});
+    }
+  };
 
   // Load next scenario item from the API
   const loadNextItem = async (
@@ -245,6 +274,7 @@ export default function AssessmentWorkspace() {
         body: JSON.stringify({ session_id: sId })
       });
       const data = await response.json();
+      if (data.error) throw new Error(data.error);
       setReport(data);
     } catch (err) {
       console.error('Failed to generate report:', err);
@@ -478,19 +508,18 @@ export default function AssessmentWorkspace() {
 
   // ─── ASSESSMENT WORKSPACE SCREEN ───
   return (
-    <div className="relative min-h-screen w-full flex flex-col md:flex-row bg-[#030303] overflow-hidden">
+    <div className="relative min-h-screen w-full bg-[#030303] overflow-hidden">
       
-      {/* ─── LEFT PANEL (60% Width) - Cinematic Video Player ─── */}
-      <div className="relative w-full md:w-3/5 h-[40vh] md:h-screen bg-black overflow-hidden scanlines shrink-0">
+      {/* ─── Cinematic Video Player (100% viewport coverage) ─── */}
+      <div className="absolute inset-0 w-full h-full bg-black overflow-hidden scanlines">
         
         {/* Layer Video A */}
         <video
           ref={videoRefA}
           src={videoA || undefined}
           autoPlay
-          muted
-          loop
           playsInline
+          onEnded={handleVideoEnded}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
             activeVideoLayer === 'A' ? 'opacity-100 z-10' : 'opacity-0 z-0'
           }`}
@@ -501,9 +530,8 @@ export default function AssessmentWorkspace() {
           ref={videoRefB}
           src={videoB || undefined}
           autoPlay
-          muted
-          loop
           playsInline
+          onEnded={handleVideoEnded}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
             activeVideoLayer === 'B' ? 'opacity-100 z-10' : 'opacity-0 z-0'
           }`}
@@ -517,16 +545,16 @@ export default function AssessmentWorkspace() {
           </div>
         )}
 
-        {/* Ambient Dark Overlay at Bottom & Right to blend panels */}
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black to-transparent z-20 pointer-events-none" />
-        <div className="hidden md:block absolute right-0 inset-y-0 w-24 bg-gradient-to-l from-black to-transparent z-20 pointer-events-none" />
+        {/* Dark Ambient Overlays to isolate floating cards */}
+        <div className="absolute inset-0 bg-black/10 z-20 pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent z-20 pointer-events-none" />
 
-        {/* Branding & Scenario Tag */}
+        {/* Branding & Scenario Tag (Top Left) */}
         <div className="absolute top-6 left-6 z-30 flex items-center gap-2 pointer-events-none">
           <div className="w-9 h-9 rounded-xl bg-purple-600/20 backdrop-blur-md border border-purple-500/30 flex items-center justify-center">
             <Sparkles className="w-4.5 h-4.5 text-purple-400" />
           </div>
-          <span className="text-sm font-bold tracking-wider text-white bg-black/35 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/5">
+          <span className="text-sm font-bold tracking-wider text-white bg-black/45 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
             PsyMetric Workspace
           </span>
         </div>
@@ -536,143 +564,151 @@ export default function AssessmentWorkspace() {
             <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
               Active Context
             </span>
-            <h2 className="text-lg md:text-xl font-extrabold text-white bg-black/40 backdrop-blur-md px-4 py-2 rounded-xl border border-white/5 inline-block">
+            <h2 className="text-lg md:text-xl font-extrabold text-white bg-black/45 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 inline-block">
               {currentScenario.title}
             </h2>
           </div>
         )}
       </div>
 
-      {/* ─── RIGHT PANEL (40% Width) - Float Glass Overlays ─── */}
-      <div className="w-full md:w-2/5 flex flex-col justify-between p-6 md:p-8 bg-[#040406] z-10">
-        
-        {/* User Info Bar */}
-        <div className="flex justify-between items-center pb-4 border-b border-zinc-900">
-          <div>
-            <h3 className="font-bold text-sm text-white line-clamp-1">{profile?.full_name || 'Student User'}</h3>
-            <span className="text-[10px] text-zinc-500 font-semibold">{profile?.age_tier} • {profile?.institution_type}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handleLogout}
-              className="text-[10px] text-zinc-400 hover:text-white border border-zinc-800 px-2.5 py-1 rounded-lg transition-colors bg-black/40 hover:bg-zinc-900"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
+      {/* ─── FLOATING OVERLAY PANEL (Part of the Video space on top of it) ─── */}
+      <AnimatePresence>
+        {showOverlay && (
+          <motion.div 
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 100 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 120 }}
+            className="absolute right-0 top-0 bottom-0 w-full md:w-[450px] flex flex-col justify-between p-6 md:p-8 bg-black/35 backdrop-blur-xl border-l border-white/10 z-30"
+          >
+            {/* User Info Bar */}
+            <div className="flex justify-between items-center pb-4 border-b border-white/10">
+              <div>
+                <h3 className="font-bold text-sm text-white line-clamp-1">{profile?.full_name || 'Student User'}</h3>
+                <span className="text-[10px] text-zinc-400 font-semibold">{profile?.age_tier} • {profile?.institution_type}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleLogout}
+                  className="text-[10px] text-zinc-400 hover:text-white border border-white/10 px-2.5 py-1 rounded-lg transition-colors bg-white/5 hover:bg-white/10"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
 
-        {/* Main Overlay Question Panel (with Framer Motion 3D Exit & Elastic Entry) */}
-        <div className="flex-1 flex items-center justify-center py-8">
-          <AnimatePresence mode="wait">
-            {currentQuestion && !animatingExit && (
-              <motion.div
-                key={currentQuestion.id}
-                initial={{ opacity: 0, rotateY: 90, scale: 0.95 }}
-                animate={{ opacity: 1, rotateY: 0, scale: 1 }}
-                exit={{ 
-                  opacity: 0, 
-                  rotateZ: -20, 
-                  scale: 0.9,
-                  transition: { duration: 0.45, ease: 'easeInOut' }
-                }}
-                transition={{ 
-                  type: 'spring', 
-                  stiffness: 100, 
-                  damping: 15,
-                  duration: 0.6
-                }}
-                className="w-full max-w-md glassmorphism p-6 rounded-3xl relative overflow-hidden"
-              >
-                {/* Back card border neon tint */}
-                <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500/30 to-teal-400/30" />
+            {/* Question Overlay Card */}
+            <div className="flex-1 flex items-center justify-center py-8">
+              <AnimatePresence mode="wait">
+                {currentQuestion && !animatingExit && (
+                  <motion.div
+                    key={currentQuestion.id}
+                    initial={{ opacity: 0, rotateY: 90, scale: 0.95 }}
+                    animate={{ opacity: 1, rotateY: 0, scale: 1 }}
+                    exit={{ 
+                      opacity: 0, 
+                      rotateZ: -20, 
+                      scale: 0.9,
+                      transition: { duration: 0.45, ease: 'easeInOut' }
+                    }}
+                    transition={{ 
+                      type: 'spring', 
+                      stiffness: 100, 
+                      damping: 15,
+                      duration: 0.6
+                    }}
+                    className="w-full glassmorphism p-6 rounded-3xl relative overflow-hidden"
+                  >
+                    {/* Back card border neon tint */}
+                    <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500/30 to-teal-400/30" />
 
-                {/* Progress Indicators */}
-                <div className="flex items-center justify-between text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-4">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-zinc-500" /> Loop {progress.answered_scenarios + 1}
+                    {/* Progress Indicators */}
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-4">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-zinc-400" /> Loop {progress.answered_scenarios + 1}
+                      </span>
+                      <span>Scenario {progress.answered_scenarios + 1} of {progress.total_scenarios}</span>
+                    </div>
+
+                    {/* Question */}
+                    <h1 className="text-base md:text-lg font-bold text-white mb-6 leading-relaxed">
+                      {currentQuestion.question_text}
+                    </h1>
+
+                    {/* Option Buttons */}
+                    <div className="space-y-3">
+                      {currentQuestion.options.map((opt) => {
+                        const isSelected = selectedOptionId === opt.id;
+                        const isClicked = clickedOptionId === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handleOptionSelect(opt.id)}
+                            disabled={clickedOptionId !== null}
+                            className={`w-full text-left p-4 rounded-2xl border transition-all text-xs leading-relaxed relative flex items-center gap-3 overflow-hidden ${
+                              isClicked 
+                                ? 'bg-purple-600/40 border-purple-500 shadow-[0_0_15px_rgba(157,78,221,0.3)] text-white scale-[0.98] animate-haptic' 
+                                : isSelected
+                                ? 'bg-purple-600/20 border-purple-500 text-white'
+                                : 'bg-black/40 border-white/5 hover:border-white/10 hover:bg-white/5 text-zinc-300 hover:text-white'
+                            }`}
+                          >
+                            <span className={`w-6 h-6 rounded-lg font-bold flex items-center justify-center shrink-0 ${
+                              isClicked
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-zinc-900 text-zinc-500 border border-white/5'
+                            }`}>
+                              {opt.option_letter}
+                            </span>
+                            <span>{opt.option_text}</span>
+                            
+                            {isClicked && (
+                              <div className="absolute right-4">
+                                <Check className="w-4 h-4 text-teal-400" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Footer Progress */}
+            <div className="space-y-4">
+              
+              {/* Progress Bar */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                  <span>Overall Progress</span>
+                  <span>{Math.round((progress.answered_scenarios / progress.total_scenarios) * 100)}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden p-[1px] border border-white/5">
+                  <div 
+                    className="h-full rounded-full bg-gradient-to-r from-purple-600 to-teal-400 transition-all duration-500"
+                    style={{ width: `${(progress.answered_scenarios / progress.total_scenarios) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center text-[10px] text-zinc-400">
+                <span className="flex items-center gap-1">
+                  <HelpCircle className="w-3.5 h-3.5 animate-pulse" /> Pick option closest to instinct
+                </span>
+                {isExtended && (
+                  <span className="flex items-center gap-1.5 text-amber-500/85 font-bold uppercase tracking-wider animate-pulse">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Extension Active (+6 scenarios)
                   </span>
-                  <span>Scenario {progress.answered_scenarios + 1} of {progress.total_scenarios}</span>
-                </div>
+                )}
+              </div>
 
-                {/* Question */}
-                <h1 className="text-base md:text-lg font-bold text-white mb-6 leading-relaxed">
-                  {currentQuestion.question_text}
-                </h1>
-
-                {/* Option Buttons */}
-                <div className="space-y-3">
-                  {currentQuestion.options.map((opt) => {
-                    const isSelected = selectedOptionId === opt.id;
-                    const isClicked = clickedOptionId === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => handleOptionSelect(opt.id)}
-                        disabled={clickedOptionId !== null}
-                        className={`w-full text-left p-4 rounded-2xl border transition-all text-xs leading-relaxed relative flex items-center gap-3 overflow-hidden ${
-                          isClicked 
-                            ? 'bg-purple-600/40 border-purple-500 shadow-[0_0_15px_rgba(157,78,221,0.3)] text-white scale-[0.98] animate-haptic' 
-                            : isSelected
-                            ? 'bg-purple-600/20 border-purple-500 text-white'
-                            : 'bg-black/30 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/40 text-zinc-300 hover:text-white'
-                        }`}
-                      >
-                        <span className={`w-6 h-6 rounded-lg font-bold flex items-center justify-center shrink-0 ${
-                          isClicked
-                            ? 'bg-purple-500 text-white'
-                            : 'bg-zinc-900 text-zinc-500 border border-zinc-800'
-                        }`}>
-                          {opt.option_letter}
-                        </span>
-                        <span>{opt.option_text}</span>
-                        
-                        {isClicked && (
-                          <div className="absolute right-4">
-                            <Check className="w-4 h-4 text-teal-400" />
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Footer Progress & Calibration State */}
-        <div className="space-y-4">
-          
-          {/* Real-time Progress Bar */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-              <span>Overall Progress</span>
-              <span>{Math.round((progress.answered_scenarios / progress.total_scenarios) * 100)}%</span>
             </div>
-            <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden p-[1px] border border-zinc-900">
-              <div 
-                className="h-full rounded-full bg-gradient-to-r from-purple-600 to-teal-400 transition-all duration-500"
-                style={{ width: `${(progress.answered_scenarios / progress.total_scenarios) * 100}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-between items-center text-[10px] text-zinc-600">
-            <span className="flex items-center gap-1">
-              <HelpCircle className="w-3.5 h-3.5" /> Pick option closest to instinct
-            </span>
-            {isExtended && (
-              <span className="flex items-center gap-1.5 text-amber-500/80 font-bold uppercase tracking-wider animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5" /> Extension Active (+6 scenarios)
-              </span>
-            )}
-          </div>
-
-        </div>
-
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

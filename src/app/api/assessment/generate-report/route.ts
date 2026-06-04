@@ -86,14 +86,7 @@ export async function POST(req: NextRequest) {
       // ─── STANDARD DATABASE RETRIEVAL ───
       const { data: sessionData, error: sessionError } = await supabase
         .from('assessment_sessions')
-        .select(`
-          *,
-          profiles:user_id (
-            full_name,
-            age_tier,
-            institution_type
-          )
-        `)
+        .select('*')
         .eq('id', session_id)
         .single();
 
@@ -102,7 +95,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
       }
 
-      profile = sessionData.profiles;
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name, age_tier, institution_type')
+        .eq('id', sessionData.user_id)
+        .single();
+
+      if (profileError || !profileData) {
+        console.error('Error fetching profile:', profileError);
+        return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+      }
+
+      profile = profileData;
       theta = sessionData.theta_vector;
       isCheat = sessionData.is_cheat_flagged;
 
