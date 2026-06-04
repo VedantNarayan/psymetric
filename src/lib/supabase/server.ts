@@ -5,7 +5,7 @@ export function createServerSupabase() {
   // Use service role if available on server, otherwise fallback to anon key
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 
                       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-                      '';
+                      'placeholder-key-for-build-safety';
 
   return createClient(supabaseUrl, supabaseKey, {
     auth: {
