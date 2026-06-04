@@ -339,6 +339,7 @@ export default function AssessmentWorkspace() {
       } else {
         // Handle background video cross-dissolve if video_url changed
         const newVideoUrl = data.current_scenario.video_url;
+        const isSameScenario = currentScenario && currentScenario.id === data.current_scenario.id;
         handleVideoTransition(newVideoUrl);
 
         setCurrentScenario(data.current_scenario);
@@ -346,7 +347,22 @@ export default function AssessmentWorkspace() {
         setProgress(data.progress);
         setSelectedOptionId(null);
         setClickedOptionId(null);
+        setShowOverlay(false);
+        setIsExpired(false);
+        setTimeLeft(12);
         questionStartTime.current = Date.now();
+
+        // If it's the same scenario, resume video playback
+        if (isSameScenario) {
+          const activeVideo = activeVideoLayer === 'A' ? videoRefA.current : videoRefB.current;
+          if (activeVideo) {
+            activeVideo.playbackRate = 1.0;
+            activeVideo.loop = false;
+            activeVideo.play().catch(err => {
+              console.warn("Failed to resume video:", err);
+            });
+          }
+        }
       }
     } catch (err) {
       console.error('Error loading next item:', err);
