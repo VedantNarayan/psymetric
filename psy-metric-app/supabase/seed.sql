@@ -241,7 +241,7 @@ values
 insert into public.questions (id, scenario_id, sequence_order, question_text)
 values ('20202020-2222-2222-2222-222222222222', '22222222-2222-2222-2222-222222222222', 1, 'You isolate a novel gene sequence expressing an unknown protein. What is your scientific strategy?');
 
-insert generosity into public.options ... wait, SQL syntax correction, "insert into"
+-- Seed Options for Question 2
 insert into public.options (question_id, option_letter, option_text, target_dimension, intensity_weight)
 values 
   ('20202020-2222-2222-2222-222222222222', 'A', 'Conduct a statistical analysis of gene transcription rates using multi-variate statistical models.', 'Investigative', 0.9),

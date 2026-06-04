@@ -79,6 +79,16 @@ alter table public.options enable row level security;
 alter table public.assessment_sessions enable row level security;
 alter table public.candidate_responses enable row level security;
 
+-- Helper function to bypass RLS recursion for admin checks
+create or replace function public.is_admin(user_id uuid)
+returns boolean as $$
+begin
+  return exists (
+    select 1 from public.profiles where id = user_id and is_admin = true
+  );
+end;
+$$ language plpgsql security definer;
+
 -- Create Policies
 
 -- Profiles Policies
@@ -92,44 +102,28 @@ create policy "Users can update their own profile" on public.profiles
   for update using (auth.uid() = id);
 
 create policy "Admins can do everything on profiles" on public.profiles
-  for all using (
-    exists (
-      select 1 from public.profiles where id = auth.uid() and is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.uid()));
 
 -- Scenarios Policies
 create policy "Authenticated users can view scenarios" on public.scenarios
   for select using (auth.role() = 'authenticated');
 
 create policy "Admins can do everything on scenarios" on public.scenarios
-  for all using (
-    exists (
-      select 1 from public.profiles where id = auth.uid() and is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.uid()));
 
 -- Questions Policies
 create policy "Authenticated users can view questions" on public.questions
   for select using (auth.role() = 'authenticated');
 
 create policy "Admins can do everything on questions" on public.questions
-  for all using (
-    exists (
-      select 1 from public.profiles where id = auth.uid() and is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.uid()));
 
 -- Options Policies
 create policy "Authenticated users can view options" on public.options
   for select using (auth.role() = 'authenticated');
 
 create policy "Admins can do everything on options" on public.options
-  for all using (
-    exists (
-      select 1 from public.profiles where id = auth.uid() and is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.uid()));
 
 -- Sessions Policies
 create policy "Users can view their own sessions" on public.assessment_sessions
@@ -142,11 +136,7 @@ create policy "Users can update their own sessions" on public.assessment_session
   for update using (auth.uid() = user_id);
 
 create policy "Admins can do everything on sessions" on public.assessment_sessions
-  for all using (
-    exists (
-      select 1 from public.profiles where id = auth.uid() and is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.uid()));
 
 -- Candidate Responses Policies
 create policy "Users can view their own responses" on public.candidate_responses
@@ -166,11 +156,7 @@ create policy "Users can insert their own responses" on public.candidate_respons
   );
 
 create policy "Admins can do everything on responses" on public.candidate_responses
-  for all using (
-    exists (
-      select 1 from public.profiles where id = auth.uid() and is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.uid()));
 
 
 -- Automatic user profile creation trigger
