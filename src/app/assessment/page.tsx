@@ -52,7 +52,7 @@ export default function AssessmentWorkspace() {
   const questionStartTime = useRef<number>(0);
   
   // Video cross-dissolve states
-  const [videoA, setVideoA] = useState('/videos/drone_assembly.mp4');
+  const [videoA, setVideoA] = useState('');
   const [videoB, setVideoB] = useState('');
   const [activeVideoLayer, setActiveVideoLayer] = useState<'A' | 'B'>('A');
   const [videoError, setVideoError] = useState(false);
@@ -381,7 +381,10 @@ export default function AssessmentWorkspace() {
   // Dual-layer cross-dissolve transition logic
   const handleVideoTransition = (newUrl: string) => {
     setVideoError(false);
-    if (activeVideoLayer === 'A') {
+    if (!videoA) {
+      setVideoA(newUrl);
+      setActiveVideoLayer('A');
+    } else if (activeVideoLayer === 'A') {
       if (videoA !== newUrl) {
         setVideoB(newUrl);
         setActiveVideoLayer('B');
@@ -733,8 +736,10 @@ export default function AssessmentWorkspace() {
           onEnded={handleVideoEnded}
           onTimeUpdate={handleTimeUpdate}
           onError={() => {
-            setVideoError(true);
-            setShowOverlay(true);
+            if (activeVideoLayer === 'A' && videoA) {
+              setVideoError(true);
+              setShowOverlay(true);
+            }
           }}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
             activeVideoLayer === 'A' ? 'opacity-100 z-10' : 'opacity-0 z-0'
@@ -751,8 +756,10 @@ export default function AssessmentWorkspace() {
           onEnded={handleVideoEnded}
           onTimeUpdate={handleTimeUpdate}
           onError={() => {
-            setVideoError(true);
-            setShowOverlay(true);
+            if (activeVideoLayer === 'B' && videoB) {
+              setVideoError(true);
+              setShowOverlay(true);
+            }
           }}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${
             activeVideoLayer === 'B' ? 'opacity-100 z-10' : 'opacity-0 z-0'
