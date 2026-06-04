@@ -950,6 +950,7 @@ export default function AssessmentWorkspace() {
                             }`}
                             strokeWidth="2.5"
                             strokeDasharray="125.66"
+                            initial={{ strokeDashoffset: 0 }}
                             animate={{ strokeDashoffset: ((12 - timeLeft) / 12) * 125.66 }}
                             transition={{ duration: 1, ease: 'linear' }}
                             strokeLinecap="round"
