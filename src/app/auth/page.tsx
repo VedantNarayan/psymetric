@@ -136,13 +136,12 @@ export default function AuthPage() {
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-600/10 rounded-full blur-3xl -z-10" />
 
       {/* Decorative branding elements */}
-      <div className="absolute top-8 left-8 flex items-center gap-2">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-teal-400 p-[1px] flex items-center justify-center shadow-lg shadow-purple-600/20">
-          <div className="w-full h-full rounded-xl bg-black flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-teal-400 animate-pulse" />
-          </div>
-        </div>
-        <span className="text-xl font-bold tracking-wider text-white">Psy<span className="text-teal-400">Metric</span></span>
+      <div className="absolute top-8 left-8 flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
+        <img 
+          src="/psymetric-logo.png" 
+          alt="PsyMetric Logo" 
+          className="h-9 w-auto object-contain"
+        />
       </div>
 
       <motion.div 

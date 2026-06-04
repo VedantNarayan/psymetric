@@ -499,8 +499,13 @@ export default function AdminConsole() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center text-white">
-        <Loader2 className="w-10 h-10 text-teal-400 spinner mb-4" />
-        <p className="text-zinc-500 tracking-wider text-xs uppercase">Initializing Console...</p>
+        <img 
+          src="/psymetric-icon.png" 
+          alt="PsyMetric Icon" 
+          className="w-12 h-12 object-contain mb-4 animate-pulse"
+        />
+        <Loader2 className="w-5 h-5 text-teal-400 animate-spin mb-2" />
+        <p className="text-zinc-500 tracking-wider text-[10px] uppercase font-bold">Initializing Console...</p>
       </div>
     );
   }
@@ -513,9 +518,12 @@ export default function AdminConsole() {
       {/* Side Control Column */}
       <div className="w-full md:w-64 bg-black/40 border-r border-zinc-900 p-6 flex flex-col justify-between shrink-0">
         <div className="space-y-8">
-          <div className="flex items-center gap-2">
-            <Shield className="w-6 h-6 text-teal-400" />
-            <span className="text-lg font-bold tracking-wider">Psy<span className="text-teal-400">Metric</span> Console</span>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
+            <img 
+              src="/psymetric-logo.png" 
+              alt="PsyMetric Logo" 
+              className="h-8 w-auto object-contain"
+            />
           </div>
 
           <div className="space-y-2">

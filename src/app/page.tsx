@@ -19,13 +19,12 @@ export default function LandingPage() {
 
       {/* Header Navigation */}
       <header className="max-w-7xl mx-auto w-full px-6 py-6 flex items-center justify-between border-b border-zinc-900/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-teal-400 p-[1px] flex items-center justify-center">
-            <div className="w-full h-full rounded-xl bg-[#030303] flex items-center justify-center">
-              <Sparkles className="w-4.5 h-4.5 text-teal-400" />
-            </div>
-          </div>
-          <span className="text-lg font-bold tracking-wider">Psy<span className="text-teal-400">Metric</span></span>
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
+          <img 
+            src="/psymetric-logo.png" 
+            alt="PsyMetric Logo" 
+            className="h-9 w-auto object-contain"
+          />
         </div>
         <div className="flex items-center gap-4">
           <button 

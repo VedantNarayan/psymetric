@@ -8,7 +8,7 @@ import {
   Sparkles, CheckCircle2, ChevronRight, Play, ArrowRight,
   TrendingUp, Award, AwardIcon, GraduationCap, Compass,
   BookOpen, BrainCircuit, ShieldAlert, RotateCcw, AlertTriangle, 
-  HelpCircle, Clock, Check, Volume2, VolumeX
+  HelpCircle, Clock, Check, Volume2, VolumeX, Loader2
 } from 'lucide-react';
 
 interface Question {
@@ -419,15 +419,20 @@ export default function AssessmentWorkspace() {
     // Calculate response time
     const timeSpent = Date.now() - questionStartTime.current;
 
+    // Start loading the next item immediately in parallel with the animations
+    const loadPromise = (async () => {
+      if (sessionId && currentQuestion) {
+        return loadNextItem(sessionId, currentQuestion.id, optionId, timeSpent);
+      }
+    })();
+
     // Wait for the button pulse animation before rotating the card out
     setTimeout(() => {
       setAnimatingExit(true);
       
       // Complete card Z-axis rotate transition
       setTimeout(async () => {
-        if (sessionId && currentQuestion) {
-          await loadNextItem(sessionId, currentQuestion.id, optionId, timeSpent);
-        }
+        await loadPromise;
         setAnimatingExit(false);
       }, 500); // exit duration
     }, 450); // button pulse duration
@@ -459,12 +464,17 @@ export default function AssessmentWorkspace() {
     setIsExpired(true);
     playChimeSound('error');
 
+    // Start loading the next item immediately in parallel with the exit delay/shake animations
+    const loadPromise = (async () => {
+      if (sessionId && currentQuestion) {
+        return loadNextItem(sessionId, currentQuestion.id, null, 12000);
+      }
+    })();
+
     setTimeout(() => {
       setAnimatingExit(true);
       setTimeout(async () => {
-        if (sessionId && currentQuestion) {
-          await loadNextItem(sessionId, currentQuestion.id, null, 12000);
-        }
+        await loadPromise;
         setAnimatingExit(false);
         setIsExpired(false);
       }, 500);
@@ -524,9 +534,14 @@ export default function AssessmentWorkspace() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center text-white">
-        <BrainCircuit className="w-12 h-12 text-purple-500 spinner mb-4" />
-        <p className="text-zinc-400 tracking-wider text-sm">LOADING ASSESSMENT WORKSPACE...</p>
+      <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center text-white animate-fade-in">
+        <img 
+          src="/psymetric-icon.png" 
+          alt="PsyMetric Icon" 
+          className="w-12 h-12 object-contain mb-4 animate-pulse"
+        />
+        <Loader2 className="w-5 h-5 text-teal-400 animate-spin mb-2" />
+        <p className="text-zinc-500 tracking-wider text-[10px] uppercase font-bold">Loading Assessment Workspace...</p>
       </div>
     );
   }
@@ -779,13 +794,17 @@ export default function AssessmentWorkspace() {
         <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-black/80 to-transparent z-20 pointer-events-none" />
 
         {/* Branding & Scenario Tag (Top Left) */}
-        <div className="absolute top-6 left-6 z-30 flex items-center gap-2 pointer-events-none">
-          <div className="w-9 h-9 rounded-xl bg-purple-600/20 backdrop-blur-md border border-purple-500/30 flex items-center justify-center">
-            <Sparkles className="w-4.5 h-4.5 text-purple-400" />
+        <div className="absolute top-6 left-6 z-30 flex items-center gap-2">
+          <div 
+            className="flex items-center gap-2 cursor-pointer bg-black/45 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 hover:bg-black/60 transition-colors pointer-events-auto shadow-lg"
+            onClick={() => router.push('/')}
+          >
+            <img 
+              src="/psymetric-logo.png" 
+              alt="PsyMetric Logo" 
+              className="h-6 w-auto object-contain"
+            />
           </div>
-          <span className="text-sm font-bold tracking-wider text-white bg-black/45 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
-            PsyMetric Workspace
-          </span>
         </div>
 
         <div className="absolute bottom-6 left-6 z-30 flex flex-col gap-3 items-start">
