@@ -13,6 +13,7 @@ export interface Question {
   id: string;
   sequence_order: number;
   question_text: string;
+  show_at_seconds?: number;
   options: Option[];
 }
 

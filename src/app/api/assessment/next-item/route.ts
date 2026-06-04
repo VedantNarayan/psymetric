@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     // ─── STANDARD DATABASE CODE ───
     
     // 1. Record Response & Update Profile Vector
-    if (selected_option_id && question_id) {
+    if (question_id) {
       const timeMs = Number(response_time_ms) || 0;
 
       const { error: responseError } = await supabase
@@ -48,24 +48,13 @@ export async function POST(req: NextRequest) {
         .insert({
           session_id,
           question_id,
-          selected_option_id,
+          selected_option_id: selected_option_id || null,
           response_time_ms: timeMs
         });
 
       if (responseError && responseError.code !== '23505') {
         console.error('Error inserting candidate response:', responseError);
         return NextResponse.json({ error: 'Failed to record response' }, { status: 500 });
-      }
-
-      const { data: option, error: optionError } = await supabase
-        .from('options')
-        .select('target_dimension, intensity_weight')
-        .eq('id', selected_option_id)
-        .single();
-
-      if (optionError || !option) {
-        console.error('Error fetching selected option details:', optionError);
-        return NextResponse.json({ error: 'Selected option not found' }, { status: 404 });
       }
 
       const { data: session, error: sessionError } = await supabase
@@ -79,40 +68,62 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Session not found' }, { status: 404 });
       }
 
-      const dimensionMap: Record<string, string> = {
-        'Realistic': 'R',
-        'Investigative': 'I',
-        'Artistic': 'A',
-        'Social': 'S',
-        'Enterprising': 'E',
-        'Conventional': 'C'
-      };
+      if (selected_option_id) {
+        const { data: option, error: optionError } = await supabase
+          .from('options')
+          .select('target_dimension, intensity_weight')
+          .eq('id', selected_option_id)
+          .single();
 
-      const dimensions = (option.target_dimension || '')
-        .split(',')
-        .map((s: string) => s.trim())
-        .filter(Boolean);
-
-      const theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
-      
-      if (!theta.counts) {
-        theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
-      }
-
-      let updated = false;
-      for (const rawDim of dimensions) {
-        const dimLetter = dimensionMap[rawDim];
-        if (dimLetter) {
-          theta[dimLetter] = (theta[dimLetter] || 0) + option.intensity_weight;
-          theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
-          updated = true;
+        if (optionError || !option) {
+          console.error('Error fetching selected option details:', optionError);
+          return NextResponse.json({ error: 'Selected option not found' }, { status: 404 });
         }
-      }
 
-      if (updated) {
+        const dimensionMap: Record<string, string> = {
+          'Realistic': 'R',
+          'Investigative': 'I',
+          'Artistic': 'A',
+          'Social': 'S',
+          'Enterprising': 'E',
+          'Conventional': 'C'
+        };
+
+        const dimensions = (option.target_dimension || '')
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean);
+
+        const theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
+        
+        if (!theta.counts) {
+          theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+        }
+
+        let updated = false;
+        for (const rawDim of dimensions) {
+          const dimLetter = dimensionMap[rawDim];
+          if (dimLetter) {
+            theta[dimLetter] = (theta[dimLetter] || 0) + option.intensity_weight;
+            theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
+            updated = true;
+          }
+        }
+
+        if (updated) {
+          await supabase
+            .from('assessment_sessions')
+            .update({ theta_vector: theta })
+            .eq('id', session_id);
+        }
+      } else {
+        // Unanswered: extend test session dynamically to serve replacement items
         await supabase
           .from('assessment_sessions')
-          .update({ theta_vector: theta })
+          .update({
+            is_extended: true,
+            total_extended_scenarios: (session.total_extended_scenarios || 0) + 1
+          })
           .eq('id', session_id);
       }
     }
@@ -123,7 +134,7 @@ export async function POST(req: NextRequest) {
       .select(`
         id, title, video_url, is_backup, target_age_group,
         questions (
-          id, sequence_order, question_text,
+          id, sequence_order, question_text, show_at_seconds,
           options (
             id, option_letter, option_text
           )
@@ -301,6 +312,7 @@ export async function POST(req: NextRequest) {
       id: nextQuestion.id,
       question_text: nextQuestion.question_text,
       sequence_order: nextQuestion.sequence_order,
+      show_at_seconds: nextQuestion.show_at_seconds || 0,
       options: sortedOptions.map((opt: any) => ({
         id: opt.id,
         option_letter: opt.option_letter,
@@ -352,55 +364,61 @@ function handleInMemoryFallback(
   const responses = inMemoryResponses[session_id];
 
   // 1. Process Response
-  if (selected_option_id && question_id) {
+  if (question_id) {
     // Check if response already exists (avoid duplicate submission bugs)
     if (!responses.some(r => r.question_id === question_id)) {
       responses.push({
         question_id,
-        selected_option_id,
-        response_time_ms: response_time_ms || 1800
+        selected_option_id: selected_option_id || null,
+        response_time_ms: response_time_ms || 12000
       });
 
-      // Find selected option traits to update theta vector
-      let foundOption: any = null;
-      for (const sc of fallbackScenarios) {
-        for (const q of sc.questions) {
-          const opt = q.options.find(o => o.id === selected_option_id);
-          if (opt) {
-            foundOption = opt;
-            break;
+      if (selected_option_id) {
+        // Find selected option traits to update theta vector
+        let foundOption: any = null;
+        for (const sc of fallbackScenarios) {
+          for (const q of sc.questions) {
+            const opt = q.options.find(o => o.id === selected_option_id);
+            if (opt) {
+              foundOption = opt;
+              break;
+            }
+          }
+          if (foundOption) break;
+        }
+
+        if (foundOption) {
+          const dimensionMap: Record<string, string> = {
+            'Realistic': 'R',
+            'Investigative': 'I',
+            'Artistic': 'A',
+            'Social': 'S',
+            'Enterprising': 'E',
+            'Conventional': 'C'
+          };
+
+          const dimensions = (foundOption.target_dimension || '')
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+
+          const theta = session.theta_vector;
+          if (!theta.counts) {
+            theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+          }
+
+          for (const rawDim of dimensions) {
+            const dimLetter = dimensionMap[rawDim];
+            if (dimLetter) {
+              theta[dimLetter] = (theta[dimLetter] || 0) + foundOption.intensity_weight;
+              theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
+            }
           }
         }
-        if (foundOption) break;
-      }
-
-      if (foundOption) {
-        const dimensionMap: Record<string, string> = {
-          'Realistic': 'R',
-          'Investigative': 'I',
-          'Artistic': 'A',
-          'Social': 'S',
-          'Enterprising': 'E',
-          'Conventional': 'C'
-        };
-
-        const dimensions = (foundOption.target_dimension || '')
-          .split(',')
-          .map((s: string) => s.trim())
-          .filter(Boolean);
-
-        const theta = session.theta_vector;
-        if (!theta.counts) {
-          theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
-        }
-
-        for (const rawDim of dimensions) {
-          const dimLetter = dimensionMap[rawDim];
-          if (dimLetter) {
-            theta[dimLetter] = (theta[dimLetter] || 0) + foundOption.intensity_weight;
-            theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
-          }
-        }
+      } else {
+        // Unanswered fallback extension
+        session.is_extended = true;
+        session.total_extended_scenarios = (session.total_extended_scenarios || 0) + 1;
       }
     }
   }
@@ -528,6 +546,7 @@ function handleInMemoryFallback(
       id: nextQuestion.id,
       question_text: nextQuestion.question_text,
       sequence_order: nextQuestion.sequence_order,
+      show_at_seconds: nextQuestion.show_at_seconds || 6,
       options: nextQuestion.options.map(opt => ({
         id: opt.id,
         option_letter: opt.option_letter,

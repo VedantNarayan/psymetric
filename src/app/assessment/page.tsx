@@ -68,6 +68,10 @@ export default function AssessmentWorkspace() {
   const [isMuted, setIsMuted] = useState(false);
   const lastScenarioId = useRef<string | null>(null);
 
+  // Timer States
+  const [timeLeft, setTimeLeft] = useState(12);
+  const [isExpired, setIsExpired] = useState(false);
+
   // Check authentication & initialize session
   useEffect(() => {
     const initSession = async () => {
@@ -128,27 +132,158 @@ export default function AssessmentWorkspace() {
     initSession();
   }, [router]);
 
+  // Procedural Sound Synthesis using Web Audio API
+  const playChimeSound = (type: 'open' | 'close' | 'error') => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      if (type === 'open') {
+        // Sci-fi Glass swoosh filter sweep
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(120, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(750, ctx.currentTime + 0.35);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(250, ctx.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(2200, ctx.currentTime + 0.35);
+
+        gain.gain.setValueAtTime(0.001, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.45);
+
+        // Chime chime ring
+        const bell = ctx.createOscillator();
+        const bellGain = ctx.createGain();
+        bell.type = 'triangle';
+        bell.frequency.setValueAtTime(1440, ctx.currentTime + 0.22);
+
+        bellGain.gain.setValueAtTime(0.001, ctx.currentTime + 0.22);
+        bellGain.gain.linearRampToValueAtTime(0.08, ctx.currentTime + 0.24);
+        bellGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+
+        bell.connect(bellGain);
+        bellGain.connect(ctx.destination);
+
+        bell.start(ctx.currentTime + 0.22);
+        bell.stop(ctx.currentTime + 0.6);
+      } else if (type === 'close') {
+        // Dynamic slide down confirm
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(580, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(140, ctx.currentTime + 0.28);
+
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        osc.stop(ctx.currentTime + 0.28);
+      } else if (type === 'error') {
+        // Double detuned sawtooth warning buzzer
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        osc1.type = 'sawtooth';
+        osc2.type = 'square';
+        osc1.frequency.setValueAtTime(110, ctx.currentTime);
+        osc2.frequency.setValueAtTime(112, ctx.currentTime);
+
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.25);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc1.start();
+        osc2.start();
+        osc1.stop(ctx.currentTime + 0.35);
+        osc2.stop(ctx.currentTime + 0.35);
+      }
+    } catch (e) {
+      console.warn('Audio synthesis failed:', e);
+    }
+  };
+
   // Synchronize overlay state based on scenario transitions
   useEffect(() => {
     if (currentScenario) {
       if (currentScenario.id !== lastScenarioId.current) {
         setShowOverlay(false);
         lastScenarioId.current = currentScenario.id;
-        if (videoRefA.current) videoRefA.current.loop = false;
-        if (videoRefB.current) videoRefB.current.loop = false;
-      } else {
-        setShowOverlay(true);
+        setIsExpired(false);
+        setTimeLeft(12);
+
+        if (videoRefA.current) {
+          videoRefA.current.playbackRate = 1.0;
+          videoRefA.current.loop = false;
+        }
+        if (videoRefB.current) {
+          videoRefB.current.playbackRate = 1.0;
+          videoRefB.current.loop = false;
+        }
       }
     }
   }, [currentScenario]);
 
-  const handleVideoEnded = () => {
+  // Fluid decelerating video pause trigger
+  const triggerOverlayAndPause = (video: HTMLVideoElement) => {
+    if (showOverlay) return;
     setShowOverlay(true);
-    // Pause the video at the last frame
+    playChimeSound('open');
+
+    let rate = 1.0;
+    const decelerate = () => {
+      rate -= 0.12;
+      if (rate <= 0.12) {
+        video.playbackRate = 1.0; // Restore to normal speed so it plays normally next time
+        video.pause();
+      } else {
+        video.playbackRate = rate;
+        requestAnimationFrame(decelerate);
+      }
+    };
+    requestAnimationFrame(decelerate);
+  };
+
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (!video || !currentQuestion) return;
+
+    const showAt = (currentQuestion as any).show_at_seconds || 0;
+    if (showAt > 0 && video.currentTime >= showAt && !showOverlay) {
+      triggerOverlayAndPause(video);
+    }
+  };
+
+  const handleVideoEnded = () => {
     if (activeVideoLayer === 'A' && videoRefA.current) {
-      videoRefA.current.pause();
+      triggerOverlayAndPause(videoRefA.current);
     } else if (activeVideoLayer === 'B' && videoRefB.current) {
-      videoRefB.current.pause();
+      triggerOverlayAndPause(videoRefB.current);
     }
   };
 
@@ -157,6 +292,7 @@ export default function AssessmentWorkspace() {
     const activeVideo = activeVideoLayer === 'A' ? videoRefA.current : videoRefB.current;
     if (activeVideo) {
       activeVideo.currentTime = 0;
+      activeVideo.playbackRate = 1.0;
       activeVideo.play().catch((err) => {
         console.warn("Replay failed:", err);
       });
@@ -246,9 +382,9 @@ export default function AssessmentWorkspace() {
 
   // Submit response trigger
   const handleOptionSelect = async (optionId: string) => {
-    if (clickedOptionId || animatingExit) return;
+    if (clickedOptionId || animatingExit || isExpired) return;
 
-    // Trigger haptic click style animation
+    playChimeSound('close');
     setClickedOptionId(optionId);
     setSelectedOptionId(optionId);
     
@@ -267,6 +403,44 @@ export default function AssessmentWorkspace() {
         }
       }, 500); // exit duration
     }, 450); // button pulse duration
+  };
+
+  // Timer countdown hook
+  useEffect(() => {
+    if (!showOverlay || !currentQuestion || isCompleted || animatingExit) return;
+
+    setTimeLeft(12);
+    setIsExpired(false);
+
+    const interval = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleTimeExpired();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [showOverlay, currentQuestion, isCompleted, animatingExit]);
+
+  // Expiration handler: shakes whole question card with red background, buzzer sound, submits blank response
+  const handleTimeExpired = () => {
+    setIsExpired(true);
+    playChimeSound('error');
+
+    setTimeout(() => {
+      setAnimatingExit(true);
+      setTimeout(async () => {
+        setAnimatingExit(false);
+        setIsExpired(false);
+        if (sessionId && currentQuestion) {
+          await loadNextItem(sessionId, currentQuestion.id, null, 12000);
+        }
+      }, 500);
+    }, 1000);
   };
 
   // AI-Report generation process
@@ -532,6 +706,7 @@ export default function AssessmentWorkspace() {
           playsInline
           muted={isMuted}
           onEnded={handleVideoEnded}
+          onTimeUpdate={handleTimeUpdate}
           onError={() => {
             setVideoError(true);
             setShowOverlay(true);
@@ -549,6 +724,7 @@ export default function AssessmentWorkspace() {
           playsInline
           muted={isMuted}
           onEnded={handleVideoEnded}
+          onTimeUpdate={handleTimeUpdate}
           onError={() => {
             setVideoError(true);
             setShowOverlay(true);
@@ -654,7 +830,14 @@ export default function AssessmentWorkspace() {
                   <motion.div
                     key={currentQuestion.id}
                     initial={{ opacity: 0, rotateY: 90, scale: 0.95 }}
-                    animate={{ opacity: 1, rotateY: 0, scale: 1 }}
+                    animate={
+                      isExpired
+                        ? {
+                            x: [0, -10, 10, -10, 10, -10, 10, 0],
+                            scale: 0.98
+                          }
+                        : { opacity: 1, rotateY: 0, scale: 1 }
+                    }
                     exit={{ 
                       opacity: 0, 
                       rotateZ: -20, 
@@ -667,17 +850,39 @@ export default function AssessmentWorkspace() {
                       damping: 15,
                       duration: 0.6
                     }}
-                    className="w-full glassmorphism p-6 rounded-3xl relative overflow-hidden"
+                    className={`w-full glassmorphism p-6 rounded-3xl relative overflow-hidden transition-all duration-300 ${
+                      isExpired ? 'bg-red-950/25 border-red-500/40 shadow-[0_0_30px_rgba(239,68,68,0.25)]' : ''
+                    }`}
                   >
                     {/* Back card border neon tint */}
                     <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500/30 to-teal-400/30" />
 
-                    {/* Progress Indicators */}
-                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-4">
-                      <span className="flex items-center gap-1">
+                    {/* Progress Indicators & Timer */}
+                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-4 gap-2">
+                      <span className="flex items-center gap-1 shrink-0">
                         <Clock className="w-3.5 h-3.5 text-zinc-400" /> Loop {progress.answered_scenarios + 1}
                       </span>
-                      <span>Scenario {progress.answered_scenarios + 1} of {progress.total_scenarios}</span>
+
+                      {/* 12-second countdown timer */}
+                      <motion.div
+                        animate={timeLeft <= 4 ? {
+                          x: [0, -3, 3, -3, 3, 0],
+                          scale: [1, 1.05, 1, 1.05, 1],
+                          transition: { repeat: Infinity, duration: 0.4 }
+                        } : {}}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border font-mono font-bold tracking-normal shrink-0 ${
+                          timeLeft >= 8
+                            ? 'bg-teal-500/10 border-teal-500/20 text-teal-400 shadow-[0_0_10px_rgba(0,245,212,0.1)]'
+                            : timeLeft >= 5
+                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
+                            : 'bg-red-500/15 border-red-500/30 text-red-500 shadow-[0_0_10px_rgba(239,68,68,0.15)] font-extrabold'
+                        }`}
+                      >
+                        <Clock className="w-3 h-3 animate-pulse" />
+                        <span>{timeLeft}s remaining</span>
+                      </motion.div>
+
+                      <span className="shrink-0 text-right">Scenario {progress.answered_scenarios + 1} of {progress.total_scenarios}</span>
                     </div>
 
                     {/* Question */}

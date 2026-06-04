@@ -49,12 +49,14 @@ export default function AdminConsole() {
   }
   interface QuestionOverlayDraft {
     questionText: string;
+    showAtSeconds: number;
     options: OptionDraft[];
   }
 
   const [questionOverlays, setQuestionOverlays] = useState<QuestionOverlayDraft[]>([
     {
       questionText: '',
+      showAtSeconds: 6,
       options: [
         { letter: 'A', text: '', dimensions: ['Realistic'], weight: 0.8 },
         { letter: 'B', text: '', dimensions: ['Investigative'], weight: 0.8 },
@@ -250,6 +252,7 @@ export default function AdminConsole() {
       ...prev,
       {
         questionText: '',
+        showAtSeconds: 6 + prev.length * 3,
         options: [
           { letter: 'A', text: '', dimensions: ['Realistic'], weight: 0.8 },
           { letter: 'B', text: '', dimensions: ['Investigative'], weight: 0.8 },
@@ -269,6 +272,14 @@ export default function AdminConsole() {
     setQuestionOverlays(prev => {
       const updated = [...prev];
       updated[qIndex] = { ...updated[qIndex], questionText: text };
+      return updated;
+    });
+  };
+
+  const handleQuestionNumChange = (qIndex: number, key: keyof QuestionOverlayDraft, value: number) => {
+    setQuestionOverlays(prev => {
+      const updated = [...prev];
+      updated[qIndex] = { ...updated[qIndex], [key]: value } as any;
       return updated;
     });
   };
@@ -337,7 +348,8 @@ export default function AdminConsole() {
           .insert({
             scenario_id: selectedScenarioId,
             sequence_order: currentSeq + i,
-            question_text: qDraft.questionText.trim()
+            question_text: qDraft.questionText.trim(),
+            show_at_seconds: Number(qDraft.showAtSeconds) || 0
           })
           .select()
           .single();
@@ -364,6 +376,7 @@ export default function AdminConsole() {
       setQuestionOverlays([
         {
           questionText: '',
+          showAtSeconds: 6,
           options: [
             { letter: 'A', text: '', dimensions: ['Realistic'], weight: 0.8 },
             { letter: 'B', text: '', dimensions: ['Investigative'], weight: 0.8 },
@@ -679,7 +692,7 @@ export default function AdminConsole() {
                                 <div className="flex justify-between items-start gap-4">
                                   <div>
                                     <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
-                                      Question Order #{q.sequence_order || qIdx + 1}
+                                      Question Order #{q.sequence_order || qIdx + 1} {q.show_at_seconds !== undefined && `• Trigger at ${q.show_at_seconds}s`}
                                     </span>
                                     <h3 className="text-xs font-bold text-zinc-200 leading-relaxed">{q.question_text}</h3>
                                   </div>
@@ -721,17 +734,8 @@ export default function AdminConsole() {
                       )}
                     </div>                    {/* Add More Questions Form */}
                     <div className="glassmorphism p-6 rounded-3xl">
-                      <h2 className="text-base font-bold text-white mb-6 flex items-center justify-between">
-                        <span className="flex items-center gap-2">
-                          <Plus className="w-5 h-5 text-teal-400" /> Map New Question Overlays
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleAddCardDraft}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 hover:border-teal-500/40 text-xs font-bold transition-all shadow-[0_0_10px_rgba(0,245,212,0.05)] cursor-pointer"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add Overlay Card
-                        </button>
+                      <h2 className="text-base font-bold text-white mb-6 flex items-center gap-2">
+                        <Plus className="w-5 h-5 text-teal-400" /> Map New Question Overlays
                       </h2>
                       
                       <form onSubmit={handleAddQuestions} className="space-y-8 text-xs">
@@ -747,25 +751,42 @@ export default function AdminConsole() {
                               </button>
                             )}
                             
-                            <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">
-                                {qIndex + 1}
-                              </span>
-                              <span className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">
-                                Overlay Card #{qIndex + 1}
-                              </span>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">
+                                  {qIndex + 1}
+                                </span>
+                                <span className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">
+                                  Overlay Card #{qIndex + 1}
+                                </span>
+                              </div>
                             </div>
 
-                            <div className="space-y-1">
-                              <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
-                              <textarea
-                                required
-                                rows={2}
-                                placeholder="e.g., The robotic gear motor jams during system testing. How do you respond?"
-                                value={qDraft.questionText}
-                                onChange={(e) => handleQuestionTextChange(qIndex, e.target.value)}
-                                className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400"
-                              />
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                              <div className="md:col-span-3 space-y-1">
+                                <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
+                                <textarea
+                                  required
+                                  rows={2}
+                                  placeholder="e.g., The robotic gear motor jams during system testing. How do you respond?"
+                                  value={qDraft.questionText}
+                                  onChange={(e) => handleQuestionTextChange(qIndex, e.target.value)}
+                                  className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400 text-xs"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Show at (seconds)</label>
+                                <input
+                                  type="number"
+                                  required
+                                  min="0"
+                                  max="300"
+                                  placeholder="e.g., 6"
+                                  value={qDraft.showAtSeconds || ''}
+                                  onChange={(e) => handleQuestionNumChange(qIndex, 'showAtSeconds', Number(e.target.value))}
+                                  className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400 text-xs"
+                                />
+                              </div>
                             </div>
 
                             <div className="space-y-4">
@@ -833,6 +854,17 @@ export default function AdminConsole() {
                                 ))}
                               </div>
                             </div>
+                            {qIndex === questionOverlays.length - 1 && (
+                              <div className="flex justify-center pt-2">
+                                <button
+                                  type="button"
+                                  onClick={handleAddCardDraft}
+                                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-500/10 border border-teal-500/20 hover:bg-teal-500/20 hover:border-teal-500/40 text-teal-400 text-xs font-bold transition-all shadow-md cursor-pointer"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Add Another Overlay Card
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
 
