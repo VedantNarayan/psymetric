@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
   let isDatabaseOffline = false;
 
   try {
-    const supabase = createServerSupabase();
+    const authHeader = req.headers.get('Authorization');
+    const supabase = createServerSupabase(authHeader);
     const body = await req.json();
     const { session_id } = body;
 

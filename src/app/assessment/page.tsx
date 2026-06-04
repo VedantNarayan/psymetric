@@ -131,9 +131,15 @@ export default function AssessmentWorkspace() {
     timeMs: number
   ) => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const response = await fetch('/api/assessment/next-item', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           session_id: sId,
           question_id: qId,
@@ -227,9 +233,15 @@ export default function AssessmentWorkspace() {
   const generatePsychologyReport = async (sId: string) => {
     setGeneratingReport(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
       const response = await fetch('/api/assessment/generate-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ session_id: sId })
       });
       const data = await response.json();
@@ -474,7 +486,7 @@ export default function AssessmentWorkspace() {
         {/* Layer Video A */}
         <video
           ref={videoRefA}
-          src={videoA}
+          src={videoA || undefined}
           autoPlay
           muted
           loop
@@ -487,7 +499,7 @@ export default function AssessmentWorkspace() {
         {/* Layer Video B */}
         <video
           ref={videoRefB}
-          src={videoB}
+          src={videoB || undefined}
           autoPlay
           muted
           loop
