@@ -154,7 +154,7 @@ export default function AdminConsole() {
         .select(`
           *,
           questions (
-            id, sequence_order, question_text,
+            id, sequence_order, question_text, show_at_seconds,
             options (
               id, option_letter, option_text, target_dimension, intensity_weight
             )
