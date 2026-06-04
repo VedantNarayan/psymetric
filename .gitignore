@@ -1,0 +1,19 @@
+# PsyMetric Global Git Ignore
+# ────────────────────────────────────────────────────────
+
+# Dependencies and build outputs
+/psy-metric-app/node_modules/
+/psy-metric-app/.next/
+/psy-metric-app/dist/
+/psy-metric-app/build/
+
+# Local configuration files
+/psy-metric-app/.env.local
+/psy-metric-app/.env.*.local
+
+# Logs and system files
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
