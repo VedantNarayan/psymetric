@@ -88,17 +88,28 @@ export async function POST(req: NextRequest) {
         'Conventional': 'C'
       };
 
-      const dimLetter = dimensionMap[option.target_dimension];
-      if (dimLetter) {
-        const theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
-        
-        if (!theta.counts) {
-          theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+      const dimensions = (option.target_dimension || '')
+        .split(',')
+        .map((s: string) => s.trim())
+        .filter(Boolean);
+
+      const theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
+      
+      if (!theta.counts) {
+        theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+      }
+
+      let updated = false;
+      for (const rawDim of dimensions) {
+        const dimLetter = dimensionMap[rawDim];
+        if (dimLetter) {
+          theta[dimLetter] = (theta[dimLetter] || 0) + option.intensity_weight;
+          theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
+          updated = true;
         }
+      }
 
-        theta[dimLetter] = (theta[dimLetter] || 0) + option.intensity_weight;
-        theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
-
+      if (updated) {
         await supabase
           .from('assessment_sessions')
           .update({ theta_vector: theta })
@@ -373,11 +384,22 @@ function handleInMemoryFallback(
           'Conventional': 'C'
         };
 
-        const dimLetter = dimensionMap[foundOption.target_dimension];
-        if (dimLetter) {
-          const theta = session.theta_vector;
-          theta[dimLetter] = (theta[dimLetter] || 0) + foundOption.intensity_weight;
-          theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
+        const dimensions = (foundOption.target_dimension || '')
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean);
+
+        const theta = session.theta_vector;
+        if (!theta.counts) {
+          theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+        }
+
+        for (const rawDim of dimensions) {
+          const dimLetter = dimensionMap[rawDim];
+          if (dimLetter) {
+            theta[dimLetter] = (theta[dimLetter] || 0) + foundOption.intensity_weight;
+            theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
+          }
         }
       }
     }

@@ -5,7 +5,7 @@ export interface Option {
   id: string;
   option_letter: string;
   option_text: string;
-  target_dimension: 'Realistic' | 'Investigative' | 'Artistic' | 'Social' | 'Enterprising' | 'Conventional';
+  target_dimension: string;
   intensity_weight: number;
 }
 

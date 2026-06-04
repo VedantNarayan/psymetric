@@ -41,12 +41,27 @@ export default function AdminConsole() {
   const [uploading, setUploading] = useState(false);
   
   // Question & Option Form States
-  const [questionText, setQuestionText] = useState('');
-  const [options, setOptions] = useState([
-    { letter: 'A', text: '', dimension: 'Realistic', weight: 0.8 },
-    { letter: 'B', text: '', dimension: 'Investigative', weight: 0.8 },
-    { letter: 'C', text: '', dimension: 'Artistic', weight: 0.8 },
-    { letter: 'D', text: '', dimension: 'Social', weight: 0.8 }
+  interface OptionDraft {
+    letter: string;
+    text: string;
+    dimensions: string[];
+    weight: number;
+  }
+  interface QuestionOverlayDraft {
+    questionText: string;
+    options: OptionDraft[];
+  }
+
+  const [questionOverlays, setQuestionOverlays] = useState<QuestionOverlayDraft[]>([
+    {
+      questionText: '',
+      options: [
+        { letter: 'A', text: '', dimensions: ['Realistic'], weight: 0.8 },
+        { letter: 'B', text: '', dimensions: ['Investigative'], weight: 0.8 },
+        { letter: 'C', text: '', dimensions: ['Artistic'], weight: 0.8 },
+        { letter: 'D', text: '', dimensions: ['Social'], weight: 0.8 }
+      ]
+    }
   ]);
 
   // Auth & Permission check
@@ -229,57 +244,133 @@ export default function AdminConsole() {
     }
   };
 
-  // Append Question Handler
-  const handleAddQuestion = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedScenarioId || !questionText.trim()) return;
+  // Card management functions
+  const handleAddCardDraft = () => {
+    setQuestionOverlays(prev => [
+      ...prev,
+      {
+        questionText: '',
+        options: [
+          { letter: 'A', text: '', dimensions: ['Realistic'], weight: 0.8 },
+          { letter: 'B', text: '', dimensions: ['Investigative'], weight: 0.8 },
+          { letter: 'C', text: '', dimensions: ['Artistic'], weight: 0.8 },
+          { letter: 'D', text: '', dimensions: ['Social'], weight: 0.8 }
+        ]
+      }
+    ]);
+  };
 
-    // Check if options are populated
-    if (options.some(opt => !opt.text.trim())) {
-      alert('Please complete all option texts (A, B, C, D).');
-      return;
+  const handleRemoveCardDraft = (index: number) => {
+    if (questionOverlays.length <= 1) return;
+    setQuestionOverlays(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleQuestionTextChange = (qIndex: number, text: string) => {
+    setQuestionOverlays(prev => {
+      const updated = [...prev];
+      updated[qIndex] = { ...updated[qIndex], questionText: text };
+      return updated;
+    });
+  };
+
+  const handleOptionChangeForCard = (qIndex: number, optIndex: number, key: string, value: any) => {
+    setQuestionOverlays(prev => {
+      const updated = [...prev];
+      const updatedOptions = [...updated[qIndex].options];
+      updatedOptions[optIndex] = { ...updatedOptions[optIndex], [key]: value };
+      updated[qIndex] = { ...updated[qIndex], options: updatedOptions };
+      return updated;
+    });
+  };
+
+  const toggleDimension = (qIndex: number, optIndex: number, dimension: string) => {
+    setQuestionOverlays(prev => {
+      const updated = [...prev];
+      const updatedOptions = [...updated[qIndex].options];
+      const currentDims = updatedOptions[optIndex].dimensions;
+      let newDims;
+      if (currentDims.includes(dimension)) {
+        newDims = currentDims.filter(d => d !== dimension);
+      } else {
+        newDims = [...currentDims, dimension];
+      }
+      updatedOptions[optIndex] = { ...updatedOptions[optIndex], dimensions: newDims };
+      updated[qIndex] = { ...updated[qIndex], options: updatedOptions };
+      return updated;
+    });
+  };
+
+  // Append multiple Question Overlays Handler
+  const handleAddQuestions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedScenarioId) return;
+
+    // Validation
+    for (let qIdx = 0; qIdx < questionOverlays.length; qIdx++) {
+      const qDraft = questionOverlays[qIdx];
+      if (!qDraft.questionText.trim()) {
+        alert(`Please fill in the Question Prompt for card #${qIdx + 1}.`);
+        return;
+      }
+      for (const opt of qDraft.options) {
+        if (!opt.text.trim()) {
+          alert(`Please fill in the text for Choice ${opt.letter} on question card #${qIdx + 1}.`);
+          return;
+        }
+        if (opt.dimensions.length === 0) {
+          alert(`Please select at least one RIASEC dimension for Choice ${opt.letter} on question card #${qIdx + 1}.`);
+          return;
+        }
+      }
     }
 
     try {
-      // Find the next sequence order
       const scenario = scenarios.find(s => s.id === selectedScenarioId);
-      const nextSeq = (scenario?.questions?.length || 0) + 1;
+      let currentSeq = (scenario?.questions?.length || 0) + 1;
 
-      // 1. Insert Question
-      const { data: newQ, error: qError } = await supabase
-        .from('questions')
-        .insert({
-          scenario_id: selectedScenarioId,
-          sequence_order: nextSeq,
-          question_text: questionText
-        })
-        .select()
-        .single();
+      for (let i = 0; i < questionOverlays.length; i++) {
+        const qDraft = questionOverlays[i];
 
-      if (qError) throw qError;
+        // 1. Insert Question
+        const { data: newQ, error: qError } = await supabase
+          .from('questions')
+          .insert({
+            scenario_id: selectedScenarioId,
+            sequence_order: currentSeq + i,
+            question_text: qDraft.questionText.trim()
+          })
+          .select()
+          .single();
 
-      // 2. Insert Options
-      const optionsData = options.map(opt => ({
-        question_id: newQ.id,
-        option_letter: opt.letter,
-        option_text: opt.text,
-        target_dimension: opt.dimension,
-        intensity_weight: Number(opt.weight)
-      }));
+        if (qError) throw qError;
 
-      const { error: optError } = await supabase
-        .from('options')
-        .insert(optionsData);
+        // 2. Insert Options
+        const optionsData = qDraft.options.map(opt => ({
+          question_id: newQ.id,
+          option_letter: opt.letter,
+          option_text: opt.text.trim(),
+          target_dimension: opt.dimensions.join(', '),
+          intensity_weight: Number(opt.weight)
+        }));
 
-      if (optError) throw optError;
+        const { error: optError } = await supabase
+          .from('options')
+          .insert(optionsData);
 
-      alert('Question and RIASEC options mapped successfully!');
-      setQuestionText('');
-      setOptions([
-        { letter: 'A', text: '', dimension: 'Realistic', weight: 0.8 },
-        { letter: 'B', text: '', dimension: 'Investigative', weight: 0.8 },
-        { letter: 'C', text: '', dimension: 'Artistic', weight: 0.8 },
-        { letter: 'D', text: '', dimension: 'Social', weight: 0.8 }
+        if (optError) throw optError;
+      }
+
+      alert('All question overlays and RIASEC options saved successfully!');
+      setQuestionOverlays([
+        {
+          questionText: '',
+          options: [
+            { letter: 'A', text: '', dimensions: ['Realistic'], weight: 0.8 },
+            { letter: 'B', text: '', dimensions: ['Investigative'], weight: 0.8 },
+            { letter: 'C', text: '', dimensions: ['Artistic'], weight: 0.8 },
+            { letter: 'D', text: '', dimensions: ['Social'], weight: 0.8 }
+          ]
+        }
       ]);
       await loadScenarios();
     } catch (err: any) {
@@ -310,12 +401,6 @@ export default function AdminConsole() {
     } catch (err: any) {
       alert('Failed to delete question: ' + err.message);
     }
-  };
-
-  const handleOptionChange = (index: number, key: string, value: any) => {
-    const updated = [...options];
-    updated[index] = { ...updated[index], [key]: value };
-    setOptions(updated);
   };
 
   if (loading) {
@@ -634,78 +719,122 @@ export default function AdminConsole() {
                           No questions mapped to this scenario yet. Use the form below to add one.
                         </div>
                       )}
-                    </div>
-
-                    {/* Add More Questions Form */}
+                    </div>                    {/* Add More Questions Form */}
                     <div className="glassmorphism p-6 rounded-3xl">
-                      <h2 className="text-base font-bold text-white mb-6 flex items-center gap-2">
-                        <Plus className="w-5 h-5 text-teal-400" /> Map New Question Overlay
+                      <h2 className="text-base font-bold text-white mb-6 flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Plus className="w-5 h-5 text-teal-400" /> Map New Question Overlays
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleAddCardDraft}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-500/20 text-teal-400 hover:bg-teal-500/20 hover:border-teal-500/40 text-xs font-bold transition-all shadow-[0_0_10px_rgba(0,245,212,0.05)] cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Add Overlay Card
+                        </button>
                       </h2>
                       
-                      <form onSubmit={handleAddQuestion} className="space-y-6 text-xs">
-                        <div className="space-y-1">
-                          <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
-                          <textarea
-                            required
-                            rows={2}
-                            placeholder="e.g., The robotic gear motor jams during system testing. How do you respond?"
-                            value={questionText}
-                            onChange={(e) => setQuestionText(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400"
-                          />
-                        </div>
+                      <form onSubmit={handleAddQuestions} className="space-y-8 text-xs">
+                        {questionOverlays.map((qDraft, qIndex) => (
+                          <div key={qIndex} className="p-6 rounded-3xl bg-black/45 border border-zinc-900/60 space-y-6 relative">
+                            {questionOverlays.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveCardDraft(qIndex)}
+                                className="absolute top-4 right-4 p-1.5 rounded-lg bg-red-950/20 border border-red-500/20 text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                            
+                            <div className="flex items-center gap-2">
+                              <span className="w-6 h-6 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">
+                                {qIndex + 1}
+                              </span>
+                              <span className="text-zinc-400 font-bold uppercase tracking-wider text-[10px]">
+                                Overlay Card #{qIndex + 1}
+                              </span>
+                            </div>
 
-                        <div className="space-y-4">
-                          <h3 className="font-bold text-zinc-300 border-b border-zinc-900 pb-2">Map Choices (A, B, C, D)</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {options.map((opt, index) => (
-                              <div key={opt.letter} className="p-4 rounded-2xl bg-black/20 border border-zinc-900 space-y-3">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-bold text-teal-400">Choice {opt.letter}</span>
-                                </div>
+                            <div className="space-y-1">
+                              <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
+                              <textarea
+                                required
+                                rows={2}
+                                placeholder="e.g., The robotic gear motor jams during system testing. How do you respond?"
+                                value={qDraft.questionText}
+                                onChange={(e) => handleQuestionTextChange(qIndex, e.target.value)}
+                                className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400"
+                              />
+                            </div>
 
-                                <input
-                                  type="text"
-                                  required
-                                  placeholder={`Text for option ${opt.letter}`}
-                                  value={opt.text}
-                                  onChange={(e) => handleOptionChange(index, 'text', e.target.value)}
-                                  className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-teal-400"
-                                />
+                            <div className="space-y-4">
+                              <h3 className="font-bold text-zinc-300 border-b border-zinc-900/40 pb-2">Map Choices (A, B, C, D)</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {qDraft.options.map((opt, optIndex) => (
+                                  <div key={opt.letter} className="p-4 rounded-2xl bg-black/20 border border-zinc-900 space-y-3">
+                                    <div className="flex justify-between items-center">
+                                      <span className="font-bold text-teal-400">Choice {opt.letter}</span>
+                                    </div>
 
-                                <div className="grid grid-cols-2 gap-2">
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] text-zinc-500 uppercase font-semibold">Holland Code</label>
-                                    <select
-                                      value={opt.dimension}
-                                      onChange={(e) => handleOptionChange(index, 'dimension', e.target.value)}
-                                      className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2 text-white"
-                                    >
-                                      <option value="Realistic">Realistic (R)</option>
-                                      <option value="Investigative">Investigative (I)</option>
-                                      <option value="Artistic">Artistic (A)</option>
-                                      <option value="Social">Social (S)</option>
-                                      <option value="Enterprising">Enterprising (E)</option>
-                                      <option value="Conventional">Conventional (C)</option>
-                                    </select>
-                                  </div>
-                                  <div className="space-y-1">
-                                    <label className="text-[10px] text-zinc-500 uppercase font-semibold">Intensity Weight ({opt.weight})</label>
                                     <input
-                                      type="range"
-                                      min="0.1"
-                                      max="1.0"
-                                      step="0.05"
-                                      value={opt.weight}
-                                      onChange={(e) => handleOptionChange(index, 'weight', Number(e.target.value))}
-                                      className="w-full h-8 accent-teal-400"
+                                      type="text"
+                                      required
+                                      placeholder={`Text for option ${opt.letter}`}
+                                      value={opt.text}
+                                      onChange={(e) => handleOptionChangeForCard(qIndex, optIndex, 'text', e.target.value)}
+                                      className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-teal-400"
                                     />
+
+                                    <div className="space-y-2">
+                                      <label className="text-[10px] text-zinc-500 uppercase font-semibold block">Holland Code (Select Multiple)</label>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {[
+                                          { name: 'Realistic', code: 'R' },
+                                          { name: 'Investigative', code: 'I' },
+                                          { name: 'Artistic', code: 'A' },
+                                          { name: 'Social', code: 'S' },
+                                          { name: 'Enterprising', code: 'E' },
+                                          { name: 'Conventional', code: 'C' }
+                                        ].map(dim => {
+                                          const isSelected = opt.dimensions.includes(dim.name);
+                                          return (
+                                            <button
+                                              key={dim.name}
+                                              type="button"
+                                              onClick={() => toggleDimension(qIndex, optIndex, dim.name)}
+                                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                                                isSelected
+                                                  ? 'bg-teal-500/10 border-teal-500 text-teal-400 shadow-[0_0_8px_rgba(0,245,212,0.1)]'
+                                                  : 'bg-black/30 border-zinc-800 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400'
+                                              }`}
+                                              title={dim.name}
+                                            >
+                                              {dim.code}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] text-zinc-500 uppercase font-semibold block">Intensity Weight ({opt.weight})</label>
+                                      <input
+                                        type="range"
+                                        min="0.1"
+                                        max="1.0"
+                                        step="0.05"
+                                        value={opt.weight}
+                                        onChange={(e) => handleOptionChangeForCard(qIndex, optIndex, 'weight', Number(e.target.value))}
+                                        className="w-full h-8 accent-teal-400"
+                                      />
+                                    </div>
                                   </div>
-                                </div>
+                                ))}
                               </div>
-                            ))}
+                            </div>
                           </div>
-                        </div>
+                        ))}
 
                         <button
                           type="submit"
