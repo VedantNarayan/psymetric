@@ -300,6 +300,18 @@ export default function AdminConsole() {
     }
   };
 
+  const handleDeleteQuestion = async (qId: string) => {
+    if (!confirm('Are you sure you want to delete this question? This will remove all associated responses.')) return;
+    try {
+      const { error } = await supabase.from('questions').delete().eq('id', qId);
+      if (error) throw error;
+      alert('Question deleted successfully.');
+      await loadScenarios();
+    } catch (err: any) {
+      alert('Failed to delete question: ' + err.message);
+    }
+  };
+
   const handleOptionChange = (index: number, key: string, value: any) => {
     const updated = [...options];
     updated[index] = { ...updated[index], [key]: value };
@@ -560,84 +572,151 @@ export default function AdminConsole() {
 
                 {/* 2. Map overlays to scenario */}
                 {selectedScenario && (
-                  <div className="glassmorphism p-6 rounded-3xl">
-                    <h2 className="text-base font-bold text-white mb-6 flex items-center gap-2">
-                      <Sliders className="w-5 h-5 text-teal-400" /> 2. Overlay Question Mapping for: <span className="text-teal-400 font-extrabold">{selectedScenario.title}</span>
-                    </h2>
+                  <div className="space-y-8">
                     
-                    <form onSubmit={handleAddQuestion} className="space-y-6 text-xs">
-                      <div className="space-y-1">
-                        <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
-                        <textarea
-                          required
-                          rows={2}
-                          placeholder="e.g., The robotic gear motor jams during system testing. How do you respond?"
-                          value={questionText}
-                          onChange={(e) => setQuestionText(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400"
-                        />
-                      </div>
+                    {/* Existing Mapped Questions List */}
+                    <div className="glassmorphism p-6 rounded-3xl">
+                      <h2 className="text-base font-bold text-white mb-6 flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Sliders className="w-5 h-5 text-teal-400" /> Active Questions in: <span className="text-teal-400 font-extrabold">{selectedScenario.title}</span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20 text-[10px] font-bold">
+                          {selectedScenario.questions?.length || 0} Mapped
+                        </span>
+                      </h2>
 
-                      <div className="space-y-4">
-                        <h3 className="font-bold text-zinc-300 border-b border-zinc-900 pb-2">Map Choices (A, B, C, D)</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {options.map((opt, index) => (
-                            <div key={opt.letter} className="p-4 rounded-2xl bg-black/20 border border-zinc-900 space-y-3">
-                              <div className="flex justify-between items-center">
-                                <span className="font-bold text-teal-400">Choice {opt.letter}</span>
-                              </div>
-
-                              <input
-                                type="text"
-                                required
-                                placeholder={`Text for option ${opt.letter}`}
-                                value={opt.text}
-                                onChange={(e) => handleOptionChange(index, 'text', e.target.value)}
-                                className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-teal-400"
-                              />
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-zinc-500 uppercase font-semibold">Holland Code</label>
-                                  <select
-                                    value={opt.dimension}
-                                    onChange={(e) => handleOptionChange(index, 'dimension', e.target.value)}
-                                    className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2 text-white"
+                      {selectedScenario.questions && selectedScenario.questions.length > 0 ? (
+                        <div className="space-y-6">
+                          {selectedScenario.questions
+                            .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
+                            .map((q: any, qIdx: number) => (
+                              <div key={q.id} className="p-5 rounded-2xl bg-black/35 border border-zinc-900/60 space-y-4">
+                                <div className="flex justify-between items-start gap-4">
+                                  <div>
+                                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
+                                      Question Order #{q.sequence_order || qIdx + 1}
+                                    </span>
+                                    <h3 className="text-xs font-bold text-zinc-200 leading-relaxed">{q.question_text}</h3>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteQuestion(q.id)}
+                                    className="p-1.5 rounded-lg bg-red-950/20 border border-red-500/20 text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors shrink-0"
                                   >
-                                    <option value="Realistic">Realistic (R)</option>
-                                    <option value="Investigative">Investigative (I)</option>
-                                    <option value="Artistic">Artistic (A)</option>
-                                    <option value="Social">Social (S)</option>
-                                    <option value="Enterprising">Enterprising (E)</option>
-                                    <option value="Conventional">Conventional (C)</option>
-                                  </select>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
-                                <div className="space-y-1">
-                                  <label className="text-[10px] text-zinc-500 uppercase font-semibold">Intensity Weight ({opt.weight})</label>
-                                  <input
-                                    type="range"
-                                    min="0.1"
-                                    max="1.0"
-                                    step="0.05"
-                                    value={opt.weight}
-                                    onChange={(e) => handleOptionChange(index, 'weight', Number(e.target.value))}
-                                    className="w-full h-8 accent-teal-400"
-                                  />
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[10px]">
+                                  {(q.options || [])
+                                    .sort((a: any, b: any) => a.option_letter.localeCompare(b.option_letter))
+                                    .map((opt: any) => (
+                                      <div key={opt.id} className="p-3 rounded-xl bg-black/20 border border-zinc-900 flex gap-2 items-start">
+                                        <span className="w-5 h-5 rounded bg-zinc-950 border border-zinc-800 text-zinc-500 font-bold flex items-center justify-center shrink-0">
+                                          {opt.option_letter}
+                                        </span>
+                                        <div className="space-y-1">
+                                          <p className="text-zinc-300 font-medium leading-relaxed">{opt.option_text}</p>
+                                          <div className="flex gap-2 items-center text-[9px]">
+                                            <span className="text-teal-400 font-semibold">{opt.target_dimension}</span>
+                                            <span className="text-zinc-600">•</span>
+                                            <span className="text-purple-400 font-semibold">Weight: {opt.intensity_weight}</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
                         </div>
-                      </div>
+                      ) : (
+                        <div className="text-center py-8 text-zinc-500 text-xs">
+                          No questions mapped to this scenario yet. Use the form below to add one.
+                        </div>
+                      )}
+                    </div>
 
-                      <button
-                        type="submit"
-                        className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
-                      >
-                        <Sparkles className="w-4 h-4" />
-                        <span>Save Overlay Questions & Dimensions</span>
-                      </button>
-                    </form>
+                    {/* Add More Questions Form */}
+                    <div className="glassmorphism p-6 rounded-3xl">
+                      <h2 className="text-base font-bold text-white mb-6 flex items-center gap-2">
+                        <Plus className="w-5 h-5 text-teal-400" /> Map New Question Overlay
+                      </h2>
+                      
+                      <form onSubmit={handleAddQuestion} className="space-y-6 text-xs">
+                        <div className="space-y-1">
+                          <label className="text-zinc-400 font-semibold uppercase tracking-wider block">Question Prompt</label>
+                          <textarea
+                            required
+                            rows={2}
+                            placeholder="e.g., The robotic gear motor jams during system testing. How do you respond?"
+                            value={questionText}
+                            onChange={(e) => setQuestionText(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl p-3 text-white focus:outline-none focus:border-teal-400"
+                          />
+                        </div>
+
+                        <div className="space-y-4">
+                          <h3 className="font-bold text-zinc-300 border-b border-zinc-900 pb-2">Map Choices (A, B, C, D)</h3>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {options.map((opt, index) => (
+                              <div key={opt.letter} className="p-4 rounded-2xl bg-black/20 border border-zinc-900 space-y-3">
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-teal-400">Choice {opt.letter}</span>
+                                </div>
+
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder={`Text for option ${opt.letter}`}
+                                  value={opt.text}
+                                  onChange={(e) => handleOptionChange(index, 'text', e.target.value)}
+                                  className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2.5 text-white focus:outline-none focus:border-teal-400"
+                                />
+
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-zinc-500 uppercase font-semibold">Holland Code</label>
+                                    <select
+                                      value={opt.dimension}
+                                      onChange={(e) => handleOptionChange(index, 'dimension', e.target.value)}
+                                      className="w-full bg-black/40 border border-zinc-800 rounded-xl p-2 text-white"
+                                    >
+                                      <option value="Realistic">Realistic (R)</option>
+                                      <option value="Investigative">Investigative (I)</option>
+                                      <option value="Artistic">Artistic (A)</option>
+                                      <option value="Social">Social (S)</option>
+                                      <option value="Enterprising">Enterprising (E)</option>
+                                      <option value="Conventional">Conventional (C)</option>
+                                    </select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] text-zinc-500 uppercase font-semibold">Intensity Weight ({opt.weight})</label>
+                                    <input
+                                      type="range"
+                                      min="0.1"
+                                      max="1.0"
+                                      step="0.05"
+                                      value={opt.weight}
+                                      onChange={(e) => handleOptionChange(index, 'weight', Number(e.target.value))}
+                                      className="w-full h-8 accent-teal-400"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          <span>Save Overlay Questions & Dimensions</span>
+                        </button>
+                      </form>
+                    </div>
+
                   </div>
                 )}
 
