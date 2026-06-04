@@ -67,6 +67,7 @@ export default function AssessmentWorkspace() {
   const [showOverlay, setShowOverlay] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const lastScenarioId = useRef<string | null>(null);
+  const hasTriggeredRef = useRef(false);
 
   // Timer States
   const [timeLeft, setTimeLeft] = useState(12);
@@ -236,6 +237,7 @@ export default function AssessmentWorkspace() {
         lastScenarioId.current = currentScenario.id;
         setIsExpired(false);
         setTimeLeft(12);
+        hasTriggeredRef.current = false;
 
         if (videoRefA.current) {
           videoRefA.current.playbackRate = 1.0;
@@ -274,12 +276,15 @@ export default function AssessmentWorkspace() {
     if (!video || !currentQuestion) return;
 
     const showAt = (currentQuestion as any).show_at_seconds || 0;
-    if (showAt > 0 && video.currentTime >= showAt && !showOverlay) {
+    if (showAt > 0 && video.currentTime >= showAt && !hasTriggeredRef.current) {
+      hasTriggeredRef.current = true;
       triggerOverlayAndPause(video);
     }
   };
 
   const handleVideoEnded = () => {
+    if (hasTriggeredRef.current) return;
+    hasTriggeredRef.current = true;
     if (activeVideoLayer === 'A' && videoRefA.current) {
       triggerOverlayAndPause(videoRefA.current);
     } else if (activeVideoLayer === 'B' && videoRefB.current) {
@@ -289,6 +294,9 @@ export default function AssessmentWorkspace() {
 
   const handleReplayVideo = () => {
     setShowOverlay(false);
+    setIsExpired(false);
+    setTimeLeft(12);
+    hasTriggeredRef.current = false;
     const activeVideo = activeVideoLayer === 'A' ? videoRefA.current : videoRefB.current;
     if (activeVideo) {
       activeVideo.currentTime = 0;
@@ -350,6 +358,7 @@ export default function AssessmentWorkspace() {
         setShowOverlay(false);
         setIsExpired(false);
         setTimeLeft(12);
+        hasTriggeredRef.current = false;
         questionStartTime.current = Date.now();
 
         // If it's the same scenario, resume video playback
@@ -413,10 +422,10 @@ export default function AssessmentWorkspace() {
       
       // Complete card Z-axis rotate transition
       setTimeout(async () => {
-        setAnimatingExit(false);
         if (sessionId && currentQuestion) {
           await loadNextItem(sessionId, currentQuestion.id, optionId, timeSpent);
         }
+        setAnimatingExit(false);
       }, 500); // exit duration
     }, 450); // button pulse duration
   };
@@ -450,11 +459,11 @@ export default function AssessmentWorkspace() {
     setTimeout(() => {
       setAnimatingExit(true);
       setTimeout(async () => {
-        setAnimatingExit(false);
-        setIsExpired(false);
         if (sessionId && currentQuestion) {
           await loadNextItem(sessionId, currentQuestion.id, null, 12000);
         }
+        setAnimatingExit(false);
+        setIsExpired(false);
       }, 500);
     }, 1000);
   };
