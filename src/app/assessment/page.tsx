@@ -844,12 +844,16 @@ export default function AssessmentWorkspace() {
                       scale: 0.9,
                       transition: { duration: 0.45, ease: 'easeInOut' }
                     }}
-                    transition={{ 
-                      type: 'spring', 
-                      stiffness: 100, 
-                      damping: 15,
-                      duration: 0.6
-                    }}
+                    transition={
+                      isExpired
+                        ? { type: 'tween', duration: 0.5, ease: 'linear' }
+                        : { 
+                            type: 'spring', 
+                            stiffness: 100, 
+                            damping: 15,
+                            duration: 0.6
+                          }
+                    }
                     className={`w-full glassmorphism p-6 rounded-3xl relative overflow-hidden transition-all duration-300 ${
                       isExpired ? 'bg-red-950/25 border-red-500/40 shadow-[0_0_30px_rgba(239,68,68,0.25)]' : ''
                     }`}
@@ -863,23 +867,54 @@ export default function AssessmentWorkspace() {
                         <Clock className="w-3.5 h-3.5 text-zinc-400" /> Loop {progress.answered_scenarios + 1}
                       </span>
 
-                      {/* 12-second countdown timer */}
+                      {/* 12-second countdown watch timer */}
                       <motion.div
                         animate={timeLeft <= 4 ? {
                           x: [0, -3, 3, -3, 3, 0],
                           scale: [1, 1.05, 1, 1.05, 1],
                           transition: { repeat: Infinity, duration: 0.4 }
                         } : {}}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border font-mono font-bold tracking-normal shrink-0 ${
-                          timeLeft >= 8
-                            ? 'bg-teal-500/10 border-teal-500/20 text-teal-400 shadow-[0_0_10px_rgba(0,245,212,0.1)]'
-                            : timeLeft >= 5
-                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
-                            : 'bg-red-500/15 border-red-500/30 text-red-500 shadow-[0_0_10px_rgba(239,68,68,0.15)] font-extrabold'
-                        }`}
+                        className="relative flex items-center justify-center shrink-0"
                       >
-                        <Clock className="w-3 h-3 animate-pulse" />
-                        <span>{timeLeft}s remaining</span>
+                        <svg className="w-12 h-12 transform -rotate-90">
+                          {/* Background Track Circle */}
+                          <circle
+                            cx="24"
+                            cy="24"
+                            r="20"
+                            className="stroke-zinc-800 fill-none"
+                            strokeWidth="2.5"
+                          />
+                          {/* Sweep Circle */}
+                          <motion.circle
+                            cx="24"
+                            cy="24"
+                            r="20"
+                            className={`fill-none transition-colors duration-300 ${
+                              timeLeft >= 8
+                                ? 'stroke-teal-400 drop-shadow-[0_0_4px_rgba(0,245,212,0.4)]'
+                                : timeLeft >= 5
+                                ? 'stroke-amber-400 drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]'
+                                : 'stroke-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.5)]'
+                            }`}
+                            strokeWidth="2.5"
+                            strokeDasharray="125.66"
+                            animate={{ strokeDashoffset: ((12 - timeLeft) / 12) * 125.66 }}
+                            transition={{ duration: 1, ease: 'linear' }}
+                            strokeLinecap="round"
+                          />
+                        </svg>
+                        {/* Countdown seconds displayed in the middle */}
+                        <div className={`absolute font-mono font-extrabold text-sm tracking-normal transition-colors duration-300 ${
+                          timeLeft >= 8
+                            ? 'text-teal-400'
+                            : timeLeft >= 5
+                            ? 'text-amber-400'
+                            : 'text-red-500 animate-pulse'
+                        }`}
+                        style={{ fontFeatureSettings: '"tnum"' }}>
+                          {timeLeft}
+                        </div>
                       </motion.div>
 
                       <span className="shrink-0 text-right">Scenario {progress.answered_scenarios + 1} of {progress.total_scenarios}</span>
