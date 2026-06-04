@@ -1,19 +1,31 @@
-# PsyMetric Global Git Ignore
-# ────────────────────────────────────────────────────────
-
-# Dependencies and build outputs
-/psy-metric-app/node_modules/
-/psy-metric-app/.next/
-/psy-metric-app/dist/
-/psy-metric-app/build/
-
-# Local configuration files
-/psy-metric-app/.env.local
-/psy-metric-app/.env.*.local
-
-# Logs and system files
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.next/
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-Thumbs.db
-.idea/
-.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Supabase local configurations
+supabase/.temp/
+
+# Design assets backup
+design_assets/
