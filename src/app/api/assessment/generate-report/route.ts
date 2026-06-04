@@ -177,13 +177,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(fallbackReport);
     }
 
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-pro',
-      generationConfig: { responseMimeType: 'application/json' }
-    });
+    try {
+      const genAI = new GoogleGenerativeAI(geminiKey);
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-1.5-pro',
+        generationConfig: { responseMimeType: 'application/json' }
+      });
 
-    const prompt = `
+      const prompt = `
 You are a Senior Elite Educational Psychologist and Vocational Director specializing in the Holland Codes (RIASEC) framework.
 Your task is to analyze a student's psychometric profile, response speed telemetry, and assessment logs to construct a highly personalized, industry-ready career guidance report.
 
@@ -246,10 +247,15 @@ You must respond with a STRICT JSON payload matching this interface:
 }
 `;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const reportData = JSON.parse(text);
-    return NextResponse.json(reportData);
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      const reportData = JSON.parse(text);
+      return NextResponse.json(reportData);
+    } catch (geminiErr: any) {
+      console.warn('Gemini API call failed, falling back to mock educational psychologist report:', geminiErr);
+      const fallbackReport = generateFallbackReport(profile, percentages, responseSummary, avgResponseTime, isCheat);
+      return NextResponse.json(fallbackReport);
+    }
 
   } catch (err: any) {
     console.error('Error in generate-report API route:', err);
