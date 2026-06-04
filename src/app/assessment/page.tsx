@@ -8,7 +8,7 @@ import {
   Sparkles, CheckCircle2, ChevronRight, Play, ArrowRight,
   TrendingUp, Award, AwardIcon, GraduationCap, Compass,
   BookOpen, BrainCircuit, ShieldAlert, RotateCcw, AlertTriangle, 
-  HelpCircle, Clock, Check
+  HelpCircle, Clock, Check, Volume2, VolumeX
 } from 'lucide-react';
 
 interface Question {
@@ -65,6 +65,7 @@ export default function AssessmentWorkspace() {
 
   // Video overlay state
   const [showOverlay, setShowOverlay] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const lastScenarioId = useRef<string | null>(null);
 
   // Check authentication & initialize session
@@ -143,12 +144,22 @@ export default function AssessmentWorkspace() {
 
   const handleVideoEnded = () => {
     setShowOverlay(true);
+    // Pause the video at the last frame
     if (activeVideoLayer === 'A' && videoRefA.current) {
-      videoRefA.current.loop = true;
-      videoRefA.current.play().catch(() => {});
+      videoRefA.current.pause();
     } else if (activeVideoLayer === 'B' && videoRefB.current) {
-      videoRefB.current.loop = true;
-      videoRefB.current.play().catch(() => {});
+      videoRefB.current.pause();
+    }
+  };
+
+  const handleReplayVideo = () => {
+    setShowOverlay(false);
+    const activeVideo = activeVideoLayer === 'A' ? videoRefA.current : videoRefB.current;
+    if (activeVideo) {
+      activeVideo.currentTime = 0;
+      activeVideo.play().catch((err) => {
+        console.warn("Replay failed:", err);
+      });
     }
   };
 
@@ -519,6 +530,7 @@ export default function AssessmentWorkspace() {
           src={videoA || undefined}
           autoPlay
           playsInline
+          muted={isMuted}
           onEnded={handleVideoEnded}
           onError={() => {
             setVideoError(true);
@@ -535,6 +547,7 @@ export default function AssessmentWorkspace() {
           src={videoB || undefined}
           autoPlay
           playsInline
+          muted={isMuted}
           onEnded={handleVideoEnded}
           onError={() => {
             setVideoError(true);
@@ -567,16 +580,37 @@ export default function AssessmentWorkspace() {
           </span>
         </div>
 
-        {currentScenario && (
-          <div className="absolute bottom-6 left-6 z-30 max-w-md pointer-events-none">
-            <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
-              Active Context
-            </span>
-            <h2 className="text-lg md:text-xl font-extrabold text-white bg-black/45 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 inline-block">
-              {currentScenario.title}
-            </h2>
-          </div>
-        )}
+        <div className="absolute bottom-6 left-6 z-30 flex flex-col gap-3 items-start">
+          {/* Mute/Unmute floating button */}
+          <button
+            type="button"
+            onClick={() => setIsMuted(prev => !prev)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-black/55 backdrop-blur-md border border-white/10 hover:bg-black/75 hover:border-white/20 text-xs font-bold text-white transition-all active:scale-95 cursor-pointer pointer-events-auto shadow-lg"
+          >
+            {isMuted ? (
+              <>
+                <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                <span>Unmute Audio</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-teal-400" />
+                <span>Mute Audio</span>
+              </>
+            )}
+          </button>
+
+          {currentScenario && (
+            <div className="max-w-md pointer-events-none">
+              <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-1">
+                Active Context
+              </span>
+              <h2 className="text-lg md:text-xl font-extrabold text-white bg-black/45 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 inline-block">
+                {currentScenario.title}
+              </h2>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── FLOATING OVERLAY PANEL (Part of the Video space on top of it) ─── */}
@@ -596,6 +630,14 @@ export default function AssessmentWorkspace() {
                 <span className="text-[10px] text-zinc-400 font-semibold">{profile?.age_tier} • {profile?.institution_type}</span>
               </div>
               <div className="flex items-center gap-2">
+                <button 
+                  type="button"
+                  onClick={handleReplayVideo}
+                  className="flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 border border-teal-500/20 px-2.5 py-1 rounded-lg transition-colors bg-teal-500/10 hover:bg-teal-500/20"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Replay Video</span>
+                </button>
                 <button 
                   onClick={handleLogout}
                   className="text-[10px] text-zinc-400 hover:text-white border border-white/10 px-2.5 py-1 rounded-lg transition-colors bg-white/5 hover:bg-white/10"
