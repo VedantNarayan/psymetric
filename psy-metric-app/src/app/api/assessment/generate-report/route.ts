@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { 
+  fallbackScenarios, 
+  inMemorySessions, 
+  inMemoryResponses, 
+  inMemoryProfiles 
+} from '@/lib/supabase/fallbackData';
 
 export async function POST(req: NextRequest) {
+  let isDatabaseOffline = false;
+
   try {
     const supabase = createServerSupabase();
     const body = await req.json();
@@ -12,62 +20,138 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing session_id' }, { status: 400 });
     }
 
-    // 1. Retrieve Assessment Session & Profile details
-    const { data: session, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select(`
-        *,
-        profiles:user_id (
-          full_name,
-          age_tier,
-          institution_type
-        )
-      `)
-      .eq('id', session_id)
-      .single();
-
-    if (sessionError || !session) {
-      console.error('Error fetching session:', sessionError);
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    // Check if database is online
+    try {
+      const { error: probeError } = await supabase.from('assessment_sessions').select('id').limit(1);
+      if (probeError) throw new Error('DB offline');
+    } catch (dbErr) {
+      isDatabaseOffline = true;
     }
 
-    const profile = session.profiles;
-    if (!profile) {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-    }
+    let profile: any = null;
+    let theta: any = null;
+    let isCheat = false;
+    let responseSummary: any[] = [];
+    let avgResponseTime = 0;
+    let fastClickPercentage = 0;
 
-    // 2. Retrieve All Responses in this session, along with Questions and Options
-    const { data: responses, error: responsesError } = await supabase
-      .from('candidate_responses')
-      .select(`
-        id,
-        response_time_ms,
-        questions:question_id (
-          question_text,
-          scenarios:scenario_id (
-            title
+    if (isDatabaseOffline) {
+      // ─── RUN IN-MEMORY RETRIEVAL ───
+      const session = inMemorySessions[session_id];
+      if (!session) {
+        return NextResponse.json({ error: 'Session not found in memory' }, { status: 404 });
+      }
+
+      profile = inMemoryProfiles[session.user_id] || inMemoryProfiles['mock-user-id'];
+      theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
+      isCheat = session.is_cheat_flagged;
+
+      const responses = inMemoryResponses[session_id] || [];
+      
+      // Calculate times
+      const totalTime = responses.reduce((sum, r) => sum + r.response_time_ms, 0);
+      avgResponseTime = responses.length > 0 ? Math.round(totalTime / responses.length) : 0;
+      
+      const fastClicks = responses.filter(r => r.response_time_ms < 1500).length;
+      fastClickPercentage = responses.length > 0 ? Math.round((fastClicks / responses.length) * 100) : 0;
+
+      // Compile response summaries
+      responseSummary = responses.map(r => {
+        let foundScenario: any = null;
+        let foundQuestion: any = null;
+        let foundOption: any = null;
+
+        for (const sc of fallbackScenarios) {
+          const q = sc.questions.find(qy => qy.id === r.question_id);
+          if (q) {
+            foundScenario = sc;
+            foundQuestion = q;
+            foundOption = q.options.find(o => o.id === r.selected_option_id);
+            break;
+          }
+        }
+
+        return {
+          scenario: foundScenario?.title || 'Alternative Field Operation',
+          question: foundQuestion?.question_text || 'Standard Question',
+          selected_option: foundOption ? `${foundOption.option_letter}: ${foundOption.option_text}` : 'Choice Selected',
+          dimension: foundOption?.target_dimension || 'Investigative',
+          weight: foundOption?.intensity_weight || 0.8,
+          response_time_ms: r.response_time_ms
+        };
+      });
+
+    } else {
+      // ─── STANDARD DATABASE RETRIEVAL ───
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('assessment_sessions')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            age_tier,
+            institution_type
           )
-        ),
-        options:selected_option_id (
-          option_letter,
-          option_text,
-          target_dimension,
-          intensity_weight
-        )
-      `)
-      .eq('session_id', session_id);
+        `)
+        .eq('id', session_id)
+        .single();
 
-    if (responsesError || !responses) {
-      console.error('Error fetching responses:', responsesError);
-      return NextResponse.json({ error: 'Failed to fetch candidate responses' }, { status: 500 });
+      if (sessionError || !sessionData) {
+        console.error('Error fetching session:', sessionError);
+        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+      }
+
+      profile = sessionData.profiles;
+      theta = sessionData.theta_vector;
+      isCheat = sessionData.is_cheat_flagged;
+
+      const { data: responses, error: responsesError } = await supabase
+        .from('candidate_responses')
+        .select(`
+          id,
+          response_time_ms,
+          questions:question_id (
+            question_text,
+            scenarios:scenario_id (
+              title
+            )
+          ),
+          options:selected_option_id (
+            option_letter,
+            option_text,
+            target_dimension,
+            intensity_weight
+          )
+        `)
+        .eq('session_id', session_id);
+
+      if (responsesError || !responses) {
+        console.error('Error fetching responses:', responsesError);
+        return NextResponse.json({ error: 'Failed to fetch candidate responses' }, { status: 500 });
+      }
+
+      avgResponseTime = responses.length > 0 
+        ? Math.round(responses.reduce((sum, r) => sum + r.response_time_ms, 0) / responses.length)
+        : 0;
+
+      const fastClicksCount = responses.filter(r => r.response_time_ms < 1500).length;
+      fastClickPercentage = responses.length > 0 ? Math.round((fastClicksCount / responses.length) * 100) : 0;
+
+      responseSummary = responses.map((r: any) => ({
+        scenario: r.questions?.scenarios?.title || 'Unknown Scenario',
+        question: r.questions?.question_text || 'Unknown Question',
+        selected_option: `${r.options?.option_letter}: ${r.options?.option_text}`,
+        dimension: r.options?.target_dimension || 'Unknown',
+        weight: r.options?.intensity_weight || 0,
+        response_time_ms: r.response_time_ms
+      }));
     }
 
-    // 3. Compute RIASEC scores and percentages from responses
-    const theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+    // 3. Compute RIASEC score distribution
     const totalIntensity = (theta.R || 0) + (theta.I || 0) + (theta.A || 0) + (theta.S || 0) + (theta.E || 0) + (theta.C || 0);
 
     const calcPercentage = (val: number) => {
-      if (totalIntensity === 0) return 16.67; // Even distribution fallback
+      if (totalIntensity === 0) return 16.67;
       return Math.round((val / totalIntensity) * 10000) / 100;
     };
 
@@ -80,37 +164,15 @@ export async function POST(req: NextRequest) {
       Conventional: calcPercentage(theta.C || 0)
     };
 
-    // Calculate response speed statistics
-    const avgResponseTime = responses.length > 0 
-      ? Math.round(responses.reduce((sum, r) => sum + r.response_time_ms, 0) / responses.length)
-      : 0;
-
-    const fastClicksCount = responses.filter(r => r.response_time_ms < 1500).length;
-    const fastClickPercentage = responses.length > 0 ? Math.round((fastClicksCount / responses.length) * 100) : 0;
-
-    // Map responses into simple summaries for the prompt
-    const responseSummary = responses.map((r: any) => {
-      return {
-        scenario: r.questions?.scenarios?.title || 'Unknown Scenario',
-        question: r.questions?.question_text || 'Unknown Question',
-        selected_option: `${r.options?.option_letter}: ${r.options?.option_text}`,
-        dimension: r.options?.target_dimension || 'Unknown',
-        weight: r.options?.intensity_weight || 0,
-        response_time_ms: r.response_time_ms
-      };
-    });
-
     // 4. Generate Report via Google Gemini API
     const geminiKey = process.env.GEMINI_API_KEY;
     if (!geminiKey || geminiKey === 'your_gemini_api_key_here') {
-      // In development/test mode without API key, return a mock report based on calculated percentages
       console.warn('GEMINI_API_KEY is missing or set to placeholder. Generating fallback mock report.');
-      const fallbackReport = generateFallbackReport(profile, percentages, responseSummary, avgResponseTime, session.is_cheat_flagged);
+      const fallbackReport = generateFallbackReport(profile, percentages, responseSummary, avgResponseTime, isCheat);
       return NextResponse.json(fallbackReport);
     }
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    // Use gemini-1.5-pro for high-end psychologist analysis
     const model = genAI.getGenerativeModel({
       model: 'gemini-1.5-pro',
       generationConfig: { responseMimeType: 'application/json' }
@@ -124,7 +186,7 @@ STUDENT PROFILE:
 - Full Name: ${profile.full_name}
 - Age Tier: ${profile.age_tier}
 - Institution Type: ${profile.institution_type}
-- Test Reliability (Anti-Cheat Flagged): ${session.is_cheat_flagged ? 'YES (Noisy/Speed-clicked dataset)' : 'NO (High Integrity Data)'}
+- Test Reliability (Anti-Cheat Flagged): ${isCheat ? 'YES (Noisy/Speed-clicked dataset)' : 'NO (High Integrity Data)'}
 - Average Response Time: ${avgResponseTime}ms
 - Rapid Click Ratio (<1.5s): ${fastClickPercentage}%
 
@@ -147,7 +209,7 @@ INSTRUCTIONS:
    - Creative (A & E/S weighted)
    Ensure these three sum to 100%.
 3. Recommend 3 highly-personalized, futuristic/modern high-growth career roles tailored specifically for this student (e.g. "Autonomous Drone Architect", "Applied AI Systems Engineer", "UI/UX Storyteller", "Quantum Crypto Specialist", "Robotic Care Coordinator").
-4. Provide a Senior Psychologist's Diagnostic Summary (3 paragraphs) reviewing their personality profile, cognitive strengths, and how their response speed (average ${avgResponseTime}ms) reflects their decision-making instincts (e.g., reflective, fast-intuition, or impulsive). If they were flagged for cheat/noise, address how data inconsistencies reflect high flexibility or random answering, in a professional and constructive manner.
+4. Provide a Senior Psychologist's Diagnostic Summary (3 paragraphs) reviewing their personality profile, cognitive strengths, and how their response speed (average ${avgResponseTime}ms) reflects their decision-making instincts.
 
 You must respond with a STRICT JSON payload matching this interface:
 {
@@ -160,17 +222,17 @@ You must respond with a STRICT JSON payload matching this interface:
     "Conventional": number
   },
   "operational_modes": {
-    "hands_on": number, // % sum to 100
-    "analytical": number, // % sum to 100
-    "creative": number // % sum to 100
+    "hands_on": number,
+    "analytical": number,
+    "creative": number
   },
   "career_recommendations": [
     {
       "title": string,
-      "field": string, // e.g. "Realistic & Investigative"
+      "field": string,
       "description": string,
-      "suitability_score": number, // 0-100
-      "growth_rate": string, // e.g. "High (Forecasted +28% by 2030)"
+      "suitability_score": number,
+      "growth_rate": string,
       "education_path": string,
       "matching_skills": string[]
     }
@@ -181,8 +243,6 @@ You must respond with a STRICT JSON payload matching this interface:
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
-    
-    // Parse response
     const reportData = JSON.parse(text);
     return NextResponse.json(reportData);
 
@@ -192,9 +252,7 @@ You must respond with a STRICT JSON payload matching this interface:
   }
 }
 
-// Fallback generator when Gemini API Key is missing or invalid, ensuring the app works during offline development.
 function generateFallbackReport(profile: any, percentages: any, responses: any[], avgResponseTime: number, isCheat: boolean) {
-  // Sort Holland dimensions to find the top ones
   const sorted = Object.entries(percentages)
     .sort((a: any, b: any) => b[1] - a[1])
     .map(entry => entry[0]);
@@ -252,7 +310,6 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
     });
   }
 
-  // Ensure we have at least 3 careers
   if (careers.length < 3) {
     careers.push({
       title: 'Creative Technical Producer',
@@ -276,7 +333,6 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
     });
   }
 
-  // Truncate to exactly 3
   careers = careers.slice(0, 3);
 
   const totalMode = hands_on + analytical + creative;
@@ -288,9 +344,10 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
     ? 'The data points show some indicators of rapid response selection or inconsistency. While this can reflect highly flexible cognitive styles or swift intuitive processing, we recommend interpreting the structured scores with guidance.'
     : 'The assessment logs show high integrity patterns, with a reflective response pacing indicating a deliberate and thoughtful approach to resolving environmental scenarios.';
 
-  const summary = `Based on our psychoanalysis, ${profile.full_name} exhibits a primary alignment with the "${top1}" and "${top2}" domains of interest. This suggests a profile that flourishes in environments combining ${top1.toLowerCase()} capabilities with ${top2.toLowerCase()} methodologies. ${statusMsg}
+  const name = profile?.full_name || 'Student';
+  const summary = `Based on our psychoanalysis, ${name} exhibits a primary alignment with the "${top1}" and "${top2}" domains of interest. This suggests a profile that flourishes in environments combining ${top1.toLowerCase()} capabilities with ${top2.toLowerCase()} methodologies. ${statusMsg}
 
-On the behavioral side, ${profile.full_name}'s average response latency of ${avgResponseTime}ms indicates a cognitive operational style that balances execution speed with decision-making confidence.
+On the behavioral side, ${name}'s average response latency of ${avgResponseTime}ms indicates a cognitive operational style that balances execution speed with decision-making confidence.
 
 We recommend pursuing modern high-growth vocational routes where they can apply their strongest dimensions natively. Specialized career options such as ${careers.map(c => c.title).join(', ')} align closely with these natural behavioral instincts.`;
 
