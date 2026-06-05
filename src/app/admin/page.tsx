@@ -7,7 +7,7 @@ import {
   BarChart3, Settings, Video, Upload, Shield, 
   Trash2, Plus, Sparkles, Sliders, Users, 
   Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2, Pencil,
-  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins
+  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fallbackScenarios } from '@/lib/supabase/fallbackData';
@@ -596,7 +596,7 @@ export default function AdminConsole() {
           }));
           setScenarios(mappedScenarios);
         } else {
-          setScenarios(fallbackScenarios);
+          setScenarios([]);
         }
 
         // 2. Fetch Enrolled Schools
@@ -615,7 +615,7 @@ export default function AdminConsole() {
             usedCredits: 100
           })));
         } else {
-          setSchoolsList(INITIAL_SCHOOLS);
+          setSchoolsList([]);
         }
 
         // 3. Fetch Classes
@@ -634,7 +634,7 @@ export default function AdminConsole() {
           });
           setAcademicClasses(classesMap);
         } else {
-          setAcademicClasses(INITIAL_CLASSES);
+          setAcademicClasses({});
         }
 
         // 4. Fetch Teachers
@@ -661,7 +661,7 @@ export default function AdminConsole() {
           }
           setTeachers(mappedTeachers);
         } else {
-          setTeachers(INITIAL_TEACHERS);
+          setTeachers([]);
         }
 
       } catch (err) {
@@ -857,6 +857,70 @@ export default function AdminConsole() {
         .then(({ error }) => {
           if (error) console.error('Error deleting scenario in Supabase:', error);
         });
+    }
+  };
+
+  const [seedingLoading, setSeedingLoading] = useState(false);
+
+  const handleSeedDefaultScenarios = async () => {
+    if (!confirm('Are you sure you want to seed the default 18 baseline scenarios to the database?')) return;
+    setSeedingLoading(true);
+    try {
+      for (const s of fallbackScenarios) {
+        await supabase.from('scenarios').upsert({
+          id: s.id,
+          title: s.title,
+          video_url: s.video_url,
+          target_age_group: s.target_age_group || 'All',
+          status: 'Published',
+          expected_time: 60,
+          focus_category: 'STEM',
+          is_active: true
+        });
+
+        for (const q of (s.questions || [])) {
+          await supabase.from('questions').upsert({
+            id: q.id,
+            scenario_id: s.id,
+            sequence_order: q.sequence_order,
+            question_text: q.question_text,
+            show_at_seconds: q.show_at_seconds || 0
+          });
+
+          for (const o of (q.options || [])) {
+            const dimensionMap: Record<string, string> = {
+              'R': 'The Builder',
+              'Realistic': 'The Builder',
+              'I': 'The Thinker',
+              'Investigative': 'The Thinker',
+              'A': 'The Creator',
+              'Artistic': 'The Creator',
+              'S': 'The Connector',
+              'Social': 'The Connector',
+              'E': 'The Leader',
+              'Enterprising': 'The Leader',
+              'C': 'The Organizer',
+              'Conventional': 'The Organizer'
+            };
+            const mappedDim = dimensionMap[o.target_dimension] || o.target_dimension;
+
+            await supabase.from('options').upsert({
+              id: o.id.length > 5 ? o.id : generateUUID(),
+              question_id: q.id,
+              option_letter: o.option_letter,
+              option_text: o.option_text,
+              target_dimension: mappedDim,
+              intensity_weight: o.intensity_weight
+            });
+          }
+        }
+      }
+      alert('Successfully seeded 18 baseline scenarios to Supabase!');
+      window.location.reload();
+    } catch (err: any) {
+      alert('Error seeding default scenarios: ' + err.message);
+    } finally {
+      setSeedingLoading(false);
     }
   };
 
@@ -2191,111 +2255,141 @@ export default function AdminConsole() {
               {/* View 1: Scenario Library (Cards) */}
               {scenActiveView === 'grid' && (
                 <div className="grid grid-cols-1 gap-6">
-                  {filteredScenarios.map((scen) => {
-                    const sets = new Set(scen.questions ? scen.questions.map((q: any) => q.sequence_order) : []);
-                    const isComplete = sets.has(1) && sets.has(2) && sets.has(3);
-
-                    return (
-                      <div key={scen.id} className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-4 text-left relative overflow-hidden">
-                        <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[9px] font-bold text-purple-400 uppercase tracking-wider">
-                                {scen.target_age_group === 'All' ? 'All Grades' : `Grades ${scen.target_age_group}`}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
-                                isComplete 
-                                  ? 'bg-teal-500/10 border-teal-500/20 text-teal-400' 
-                                  : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                              }`}>
-                                {isComplete ? 'Fully Configured' : 'Needs Config'}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
-                                (scen.status || 'Published') === 'Published'
-                                  ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-450'
-                                  : (scen.status || 'Published') === 'Draft'
-                                  ? 'bg-blue-500/10 border-blue-500/25 text-blue-450'
-                                  : 'bg-zinc-800 border-zinc-700 text-zinc-400'
-                              }`}>
-                                {scen.status || 'Published'}
-                              </span>
-                              {(scen.focus_category || 'STEM').split(',').map((cat: string) => (
-                                <span key={cat.trim()} className="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-[9px] text-zinc-400 uppercase tracking-wider font-mono">
-                                  {cat.trim()}
-                                </span>
-                              ))}
-                              <span className="text-zinc-500 text-[10px]">ID: {scen.id}</span>
-                            </div>
-                            <h4 className="text-base font-extrabold text-white flex items-center gap-2">
-                              {scen.title}
-                              <span className="text-zinc-500 text-xs font-normal">({scen.expected_time || 60}s clip)</span>
-                            </h4>
-                            <p className="text-xs text-zinc-500 font-mono">{scen.video_url}</p>
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
-                            <button 
-                              onClick={() => handleEditScenarioClick(scen)}
-                              className="p-2 px-3 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all text-xs font-bold flex items-center gap-1"
-                            >
-                              <Pencil className="w-3.5 h-3.5 text-purple-400" /> Edit Backdrop
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteScenario(scen.id)}
-                              className="p-2 px-3 rounded-xl bg-red-950/20 border border-red-900/30 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-all text-xs font-bold flex items-center gap-1"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> Delete
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Render questions inside scenario */}
-                        <div className="space-y-3 pt-3 border-t border-zinc-900/60">
-                          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Scored Questions</span>
-                          {scen.questions && scen.questions.length > 0 ? (
-                            scen.questions.map((q: any, qIdx: number) => {
-                              const readability = estimateReadability(q.question_text);
-                              return (
-                                <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-2">
-                                  <div className="flex flex-wrap justify-between items-center text-[10px] text-zinc-500 gap-2">
-                                    <span className="font-bold">Set {q.sequence_order} • Q{qIdx + 1}</span>
-                                    <div className="flex items-center gap-2">
-                                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
-                                        readability.level === 'Complex' ? 'bg-amber-950/40 text-amber-400 border border-amber-900/50' : 'bg-zinc-900 text-zinc-500'
-                                      }`}>
-                                        Readability: {readability.grade} ({readability.level})
-                                      </span>
-                                      <span className="font-bold text-amber-500">Trigger: {q.show_at_seconds || 5}s</span>
-                                    </div>
-                                  </div>
-                                  <p className="text-xs text-zinc-200 font-semibold">{q.question_text}</p>
-                                  {readability.warnings.length > 0 && (
-                                    <div className="text-[9px] text-amber-400/90 font-medium">
-                                      ⚠️ {readability.warnings.join(', ')}
-                                    </div>
-                                  )}
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                                    {q.options && q.options.map((opt: any, oIdx: number) => (
-                                      <div key={opt.id || oIdx} className="p-2.5 rounded-xl bg-black/40 border border-zinc-900/60 text-[10px] space-y-1">
-                                        <span className="font-bold text-teal-400 font-mono">Option {opt.option_letter}:</span>
-                                        <p className="text-zinc-400 line-clamp-1">{opt.option_text}</p>
-                                        <div className="flex justify-between text-[8px] text-zinc-650 pt-1 border-t border-zinc-900/40">
-                                          <span>Spectrum: <strong className="text-zinc-400">{opt.target_dimension || 'None'}</strong></span>
-                                          <span>Weight: <strong className="text-zinc-400 font-mono">{opt.intensity_weight}</strong></span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <p className="text-xs text-zinc-600 italic">No questions added to this scenario yet.</p>
-                          )}
-                        </div>
+                  {filteredScenarios.length === 0 ? (
+                    <div className="text-center py-16 px-4 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-4">
+                      <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-500 flex items-center justify-center mx-auto">
+                        <FolderOpen className="w-6 h-6" />
                       </div>
-                    );
-                  })}
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-bold text-white">No Scenarios Found</h4>
+                        <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                          Your active cohort database contains 0 scenarios. Seed the baseline library or create one manually to start.
+                        </p>
+                      </div>
+                      <div className="flex justify-center gap-3 pt-2">
+                        <button
+                          onClick={handleSeedDefaultScenarios}
+                          disabled={seedingLoading}
+                          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-bold text-xs transition-all active:scale-95 flex items-center gap-1.5"
+                        >
+                          {seedingLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                          <span>Seed Default Library</span>
+                        </button>
+                        <button
+                          onClick={() => setScenActiveView('schema')}
+                          className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 font-bold text-xs transition-all active:scale-95"
+                        >
+                          Import Schema
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    filteredScenarios.map((scen) => {
+                      const sets = new Set(scen.questions ? scen.questions.map((q: any) => q.sequence_order) : []);
+                      const isComplete = sets.has(1) && sets.has(2) && sets.has(3);
+
+                      return (
+                        <div key={scen.id} className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-4 text-left relative overflow-hidden">
+                          <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[9px] font-bold text-purple-400 uppercase tracking-wider">
+                                  {scen.target_age_group === 'All' ? 'All Grades' : `Grades ${scen.target_age_group}`}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
+                                  isComplete 
+                                    ? 'bg-teal-500/10 border-teal-500/20 text-teal-400' 
+                                    : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                }`}>
+                                  {isComplete ? 'Fully Configured' : 'Needs Config'}
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
+                                  (scen.status || 'Published') === 'Published'
+                                    ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-450'
+                                    : (scen.status || 'Published') === 'Draft'
+                                    ? 'bg-blue-500/10 border-blue-500/25 text-blue-450'
+                                    : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                                }`}>
+                                  {scen.status || 'Published'}
+                                </span>
+                                {(scen.focus_category || 'STEM').split(',').map((cat: string) => (
+                                  <span key={cat.trim()} className="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-[9px] text-zinc-400 uppercase tracking-wider font-mono">
+                                    {cat.trim()}
+                                  </span>
+                                ))}
+                                <span className="text-zinc-500 text-[10px]">ID: {scen.id}</span>
+                              </div>
+                              <h4 className="text-base font-extrabold text-white flex items-center gap-2">
+                                {scen.title}
+                                <span className="text-zinc-500 text-xs font-normal">({scen.expected_time || 60}s clip)</span>
+                              </h4>
+                              <p className="text-xs text-zinc-500 font-mono">{scen.video_url}</p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
+                              <button 
+                                onClick={() => handleEditScenarioClick(scen)}
+                                className="p-2 px-3 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all text-xs font-bold flex items-center gap-1"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-purple-400" /> Edit Backdrop
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteScenario(scen.id)}
+                                className="p-2 px-3 rounded-xl bg-red-950/20 border border-red-900/30 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-all text-xs font-bold flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Render questions inside scenario */}
+                          <div className="space-y-3 pt-3 border-t border-zinc-900/60">
+                            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Scored Questions</span>
+                            {scen.questions && scen.questions.length > 0 ? (
+                              scen.questions.map((q: any, qIdx: number) => {
+                                const readability = estimateReadability(q.question_text);
+                                return (
+                                  <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-2">
+                                    <div className="flex flex-wrap justify-between items-center text-[10px] text-zinc-500 gap-2">
+                                      <span className="font-bold">Set {q.sequence_order} • Q{qIdx + 1}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                                          readability.level === 'Complex' ? 'bg-amber-950/40 text-amber-400 border border-amber-900/50' : 'bg-zinc-900 text-zinc-500'
+                                        }`}>
+                                          Readability: {readability.grade} ({readability.level})
+                                        </span>
+                                        <span className="font-bold text-amber-500">Trigger: {q.show_at_seconds || 5}s</span>
+                                      </div>
+                                    </div>
+                                    <p className="text-xs text-zinc-200 font-semibold">{q.question_text}</p>
+                                    {readability.warnings.length > 0 && (
+                                      <div className="text-[9px] text-amber-400/90 font-medium">
+                                        ⚠️ {readability.warnings.join(', ')}
+                                      </div>
+                                    )}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                                      {q.options && q.options.map((opt: any, oIdx: number) => (
+                                        <div key={opt.id || oIdx} className="p-2.5 rounded-xl bg-black/40 border border-zinc-900/60 text-[10px] space-y-1">
+                                          <span className="font-bold text-teal-400 font-mono">Option {opt.option_letter}:</span>
+                                          <p className="text-zinc-400 line-clamp-1">{opt.option_text}</p>
+                                          <div className="flex justify-between text-[8px] text-zinc-650 pt-1 border-t border-zinc-900/40">
+                                            <span>Spectrum: <strong className="text-zinc-400">{opt.target_dimension || 'None'}</strong></span>
+                                            <span>Weight: <strong className="text-zinc-400 font-mono">{opt.intensity_weight}</strong></span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <p className="text-xs text-zinc-600 italic">No questions added to this scenario yet.</p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
 
