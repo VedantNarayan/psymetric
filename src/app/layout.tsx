@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "PsyMetric Labs - Immersive Adaptive Testing",
-  description: "Cinematic, AI-powered interactive psychometric evaluation based on the Holland Codes (RIASEC) framework.",
+  description: "Cinematic, AI-powered interactive psychometric evaluation based on character trait alignment for student career guidance.",
   icons: {
     icon: "/psymetric-icon.png",
   }

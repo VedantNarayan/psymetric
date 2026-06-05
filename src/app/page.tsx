@@ -56,7 +56,7 @@ export default function LandingPage() {
           </h1>
           
           <p className="text-zinc-400 text-sm sm:text-base leading-relaxed max-w-xl mx-auto lg:mx-0">
-            Evaluate student interests and behavioral instincts using immersive video-based interactive scenarios. Get accurate career reports analyzed by Google Gemini AI based on the 6D Holland Codes (RIASEC) framework.
+            Evaluate student interests and behavioral instincts using immersive video-based interactive scenarios. Get accurate career reports analyzed by Google Gemini AI based on a 6D character trait mapping framework.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">

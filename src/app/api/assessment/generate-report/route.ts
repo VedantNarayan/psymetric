@@ -185,8 +185,19 @@ export async function POST(req: NextRequest) {
       });
 
       const prompt = `
-You are a Senior Elite Educational Psychologist and Vocational Director specializing in the Holland Codes (RIASEC) framework.
+You are a Senior Elite Educational Psychologist and Vocational Director.
 Your task is to analyze a student's psychometric profile, response speed telemetry, and assessment logs to construct a highly personalized, industry-ready career guidance report.
+
+CRITICAL RULE:
+You must NEVER use the words "RIASEC", "Holland Codes", or the raw terms "Realistic", "Investigative", "Artistic", "Social", "Enterprising", "Conventional" anywhere in your text. Instead, refer to them by their friendly labels:
+- Realistic -> "The Builder"
+- Investigative -> "The Thinker"
+- Artistic -> "The Creator"
+- Social -> "The Connector"
+- Enterprising -> "The Leader"
+- Conventional -> "The Organizer"
+
+Use these friendly terms (e.g., "The Creator", "The Connector") in your psychologist_summary and all career recommendations.
 
 STUDENT PROFILE:
 - Full Name: ${profile.full_name}
@@ -196,23 +207,23 @@ STUDENT PROFILE:
 - Average Response Time: ${avgResponseTime}ms
 - Rapid Click Ratio (<1.5s): ${fastClickPercentage}%
 
-CALCULATED HOLLAND SCORING DIMENSIONS:
-- Realistic (R): ${percentages.Realistic}%
-- Investigative (I): ${percentages.Investigative}%
-- Artistic (A): ${percentages.Artistic}%
-- Social (S): ${percentages.Social}%
-- Enterprising (E): ${percentages.Enterprising}%
-- Conventional (C): ${percentages.Conventional}%
+CALCULATED SCORING DIMENSIONS:
+- The Builder: ${percentages.Realistic}%
+- The Thinker: ${percentages.Investigative}%
+- The Creator: ${percentages.Artistic}%
+- The Connector: ${percentages.Social}%
+- The Leader: ${percentages.Enterprising}%
+- The Organizer: ${percentages.Conventional}%
 
 ASSESSMENT TRAILING LOGS (Scenario details and student choices):
 ${JSON.stringify(responseSummary, null, 2)}
 
 INSTRUCTIONS:
-1. Review the Holland dimension percentages. Determine the dominant Holland Code combination (typically the top 2-3 traits).
+1. Review the scoring dimensions. Determine the dominant trait combination (typically the top 2-3 traits).
 2. Calculate the "Operational Mode Breakdown":
-   - Hands-on (R & C weighted)
-   - Analytical (I & C weighted)
-   - Creative (A & E/S weighted)
+   - Hands-on (The Builder & The Organizer weighted)
+   - Analytical (The Thinker & The Organizer weighted)
+   - Creative (The Creator & The Leader/The Connector weighted)
    Ensure these three sum to 100%.
 3. Recommend 3 highly-personalized, futuristic/modern high-growth career roles tailored specifically for this student (e.g. "Autonomous Drone Architect", "Applied AI Systems Engineer", "UI/UX Storyteller", "Quantum Crypto Specialist", "Robotic Care Coordinator").
 4. Provide a Senior Psychologist's Diagnostic Summary (3 paragraphs) reviewing their personality profile, cognitive strengths, and how their response speed (average ${avgResponseTime}ms) reflects their decision-making instincts.
@@ -220,12 +231,12 @@ INSTRUCTIONS:
 You must respond with a STRICT JSON payload matching this interface:
 {
   "holland_percentages": {
-    "Realistic": number,
-    "Investigative": number,
-    "Artistic": number,
-    "Social": number,
-    "Enterprising": number,
-    "Conventional": number
+    "The Builder": number,
+    "The Thinker": number,
+    "The Creator": number,
+    "The Connector": number,
+    "The Leader": number,
+    "The Organizer": number
   },
   "operational_modes": {
     "hands_on": number,
@@ -264,7 +275,16 @@ You must respond with a STRICT JSON payload matching this interface:
 }
 
 function generateFallbackReport(profile: any, percentages: any, responses: any[], avgResponseTime: number, isCheat: boolean) {
-  const sorted = Object.entries(percentages)
+  const friendlyPercentages = {
+    "The Builder": percentages.Realistic || 0,
+    "The Thinker": percentages.Investigative || 0,
+    "The Creator": percentages.Artistic || 0,
+    "The Connector": percentages.Social || 0,
+    "The Leader": percentages.Enterprising || 0,
+    "The Organizer": percentages.Conventional || 0
+  };
+
+  const sorted = Object.entries(friendlyPercentages)
     .sort((a: any, b: any) => b[1] - a[1])
     .map(entry => entry[0]);
 
@@ -276,13 +296,13 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
   let analytical = 40;
   let creative = 30;
 
-  if (top1 === 'Realistic' || top2 === 'Realistic') {
+  if (top1 === 'The Builder' || top2 === 'The Builder') {
     hands_on = 60;
     analytical = 25;
     creative = 15;
     careers.push({
       title: 'Autonomous Drone Architect',
-      field: 'Realistic & Investigative',
+      field: 'The Builder & The Thinker',
       description: 'Designing high-end physical UAV structures coupled with automated navigation scripting.',
       suitability_score: 94,
       growth_rate: 'High (Forecasted +28% by 2030)',
@@ -291,13 +311,13 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
     });
   }
 
-  if (top1 === 'Investigative' || top2 === 'Investigative') {
+  if (top1 === 'The Thinker' || top2 === 'The Thinker') {
     analytical = 60;
     hands_on = 20;
     creative = 20;
     careers.push({
       title: 'Applied AI Systems Engineer',
-      field: 'Investigative & Conventional',
+      field: 'The Thinker & The Organizer',
       description: 'Developing and optimizing deep learning model integration pipelines within enterprise databases.',
       suitability_score: 91,
       growth_rate: 'Very High (+35% growth by 2028)',
@@ -306,13 +326,13 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
     });
   }
 
-  if (top1 === 'Artistic' || top2 === 'Artistic') {
+  if (top1 === 'The Creator' || top2 === 'The Creator') {
     creative = 60;
     analytical = 20;
     hands_on = 20;
     careers.push({
       title: 'Immersive UI/UX Storyteller',
-      field: 'Artistic & Social',
+      field: 'The Creator & The Connector',
       description: 'Crafting responsive glassmorphic interfaces and spatial VR flows focused on user interaction.',
       suitability_score: 89,
       growth_rate: 'Medium-High (+22% Growth)',
@@ -324,7 +344,7 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
   if (careers.length < 3) {
     careers.push({
       title: 'Creative Technical Producer',
-      field: 'Enterprising & Artistic',
+      field: 'The Leader & The Creator',
       description: 'Directing complex digital game audio synthesizers and coordinating design sprints.',
       suitability_score: 85,
       growth_rate: 'High (+15% Growth)',
@@ -335,7 +355,7 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
   if (careers.length < 3) {
     careers.push({
       title: 'Systems Compliance Manager',
-      field: 'Conventional & Investigative',
+      field: 'The Organizer & The Thinker',
       description: 'Structuring massive ledger transactions and auditing system frameworks for security compliance.',
       suitability_score: 82,
       growth_rate: 'Stable (+8% Growth)',
@@ -356,14 +376,14 @@ function generateFallbackReport(profile: any, percentages: any, responses: any[]
     : 'The assessment logs show high integrity patterns, with a reflective response pacing indicating a deliberate and thoughtful approach to resolving environmental scenarios.';
 
   const name = profile?.full_name || 'Student';
-  const summary = `Based on our psychoanalysis, ${name} exhibits a primary alignment with the "${top1}" and "${top2}" domains of interest. This suggests a profile that flourishes in environments combining ${top1.toLowerCase()} capabilities with ${top2.toLowerCase()} methodologies. ${statusMsg}
+  const summary = `Based on our psychoanalysis, ${name} exhibits a primary alignment with ${top1} and ${top2} domains. This suggests a profile that flourishes in environments combining ${top1.toLowerCase()} capabilities with ${top2.toLowerCase()} methodologies. ${statusMsg}
 
 On the behavioral side, ${name}'s average response latency of ${avgResponseTime}ms indicates a cognitive operational style that balances execution speed with decision-making confidence.
 
 We recommend pursuing modern high-growth vocational routes where they can apply their strongest dimensions natively. Specialized career options such as ${careers.map(c => c.title).join(', ')} align closely with these natural behavioral instincts.`;
 
   return {
-    holland_percentages: percentages,
+    holland_percentages: friendlyPercentages,
     operational_modes: {
       hands_on,
       analytical,
