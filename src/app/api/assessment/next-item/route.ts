@@ -205,13 +205,16 @@ export async function POST(req: NextRequest) {
     const scenarioQuestionStatus = scenarios.map(sc => {
       const qs = sc.questions || [];
       
-      // Select the active question for this set_number. If missing, fall back to the first.
-      let activeQ = qs.find(q => q.sequence_order === set_number);
+      const candidates = qs.filter((q: any) => q.sequence_order === set_number);
+      let activeQ = candidates.find((q: any) => !answeredQuestionIds.has(q.id));
+      if (!activeQ && candidates.length > 0) {
+        activeQ = candidates[0];
+      }
       if (!activeQ && qs.length > 0) {
         activeQ = qs.sort((a: any, b: any) => a.sequence_order - b.sequence_order)[0];
       }
 
-      const isCompleted = activeQ ? answeredQuestionIds.has(activeQ.id) : false;
+      const isCompleted = qs.some((q: any) => answeredQuestionIds.has(q.id));
       
       return {
         ...sc,
@@ -503,13 +506,16 @@ function handleInMemoryFallback(
   const scenarioQuestionStatus = fallbackScenarios.map(sc => {
     const qs = sc.questions || [];
     
-    // Select the active question for this set_number. If missing, fall back to the first.
-    let activeQ = qs.find(q => q.sequence_order === set_number);
+    const candidates = qs.filter(q => q.sequence_order === set_number);
+    let activeQ = candidates.find(q => !answeredQuestionIds.has(q.id));
+    if (!activeQ && candidates.length > 0) {
+      activeQ = candidates[0];
+    }
     if (!activeQ && qs.length > 0) {
       activeQ = qs.sort((a, b) => a.sequence_order - b.sequence_order)[0];
     }
 
-    const isCompleted = activeQ ? answeredQuestionIds.has(activeQ.id) : false;
+    const isCompleted = qs.some(q => answeredQuestionIds.has(q.id));
     
     return {
       ...sc,

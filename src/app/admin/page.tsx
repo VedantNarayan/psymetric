@@ -175,14 +175,91 @@ export default function AdminConsole() {
   const [isQuestionSetModalOpen, setIsQuestionSetModalOpen] = useState(false);
   const [qSetSelectedScenarioId, setQSetSelectedScenarioId] = useState('');
   const [qSetSetNumber, setQSetSetNumber] = useState(1);
-  const [qSetPrompt, setQSetPrompt] = useState('');
-  const [qSetTriggerSeconds, setQSetTriggerSeconds] = useState(5);
-  const [qSetOptions, setQSetOptions] = useState<any[]>([
-    { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
-    { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
-    { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
-    { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+  const [qSetQuestions, setQSetQuestions] = useState<any[]>([
+    {
+      question_text: '',
+      show_at_seconds: 5,
+      options: [
+        { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+        { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+        { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+        { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+      ]
+    }
   ]);
+
+  const handleQuestionTextChange = (qIdx: number, val: string) => {
+    setQSetQuestions(prev => {
+      const copy = [...prev];
+      copy[qIdx] = { ...copy[qIdx], question_text: val };
+      return copy;
+    });
+  };
+
+  const handleQuestionSecondsChange = (qIdx: number, val: number) => {
+    setQSetQuestions(prev => {
+      const copy = [...prev];
+      copy[qIdx] = { ...copy[qIdx], show_at_seconds: val };
+      return copy;
+    });
+  };
+
+  const handleOptionTextChange = (qIdx: number, oIdx: number, val: string) => {
+    setQSetQuestions(prev => {
+      const copy = [...prev];
+      const qCopy = { ...copy[qIdx] };
+      const optsCopy = [...qCopy.options];
+      optsCopy[oIdx] = { ...optsCopy[oIdx], option_text: val };
+      qCopy.options = optsCopy;
+      copy[qIdx] = qCopy;
+      return copy;
+    });
+  };
+
+  const handleOptionDimensionChange = (qIdx: number, oIdx: number, val: string) => {
+    setQSetQuestions(prev => {
+      const copy = [...prev];
+      const qCopy = { ...copy[qIdx] };
+      const optsCopy = [...qCopy.options];
+      optsCopy[oIdx] = { ...optsCopy[oIdx], target_dimension: val };
+      qCopy.options = optsCopy;
+      copy[qIdx] = qCopy;
+      return copy;
+    });
+  };
+
+  const handleOptionWeightChange = (qIdx: number, oIdx: number, val: number) => {
+    setQSetQuestions(prev => {
+      const copy = [...prev];
+      const qCopy = { ...copy[qIdx] };
+      const optsCopy = [...qCopy.options];
+      optsCopy[oIdx] = { ...optsCopy[oIdx], intensity_weight: val };
+      qCopy.options = optsCopy;
+      copy[qIdx] = qCopy;
+      return copy;
+    });
+  };
+
+  const handleAddQuestionToSet = () => {
+    setQSetQuestions(prev => [
+      ...prev,
+      {
+        question_text: '',
+        show_at_seconds: 5,
+        options: [
+          { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+          { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+          { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+          { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+        ]
+      }
+    ]);
+  };
+
+  const handleRemoveQuestionFromSet = (qIdx: number) => {
+    setQSetQuestions(prev => prev.filter((_, idx) => idx !== qIdx));
+  };
+
 
   const [isSchoolModalOpen, setIsSchoolModalOpen] = useState(false);
   const [newSchoolName, setNewSchoolName] = useState('');
@@ -241,28 +318,36 @@ export default function AdminConsole() {
     if (!qSetSelectedScenarioId) return;
     const scen = scenarios.find(s => s.id === qSetSelectedScenarioId);
     if (scen && scen.questions) {
-      const existingQ = scen.questions.find((q: any) => q.sequence_order === qSetSetNumber);
-      if (existingQ) {
-        setQSetPrompt(existingQ.question_text);
-        setQSetTriggerSeconds(existingQ.show_at_seconds || 5);
-        setQSetOptions(existingQ.options ? JSON.parse(JSON.stringify(existingQ.options)) : [
+      const existingQs = scen.questions.filter((q: any) => q.sequence_order === qSetSetNumber);
+      if (existingQs.length > 0) {
+        setQSetQuestions(existingQs.map((q: any) => ({
+          id: q.id,
+          question_text: q.question_text,
+          show_at_seconds: q.show_at_seconds || 5,
+          options: q.options ? JSON.parse(JSON.stringify(q.options)) : [
+            { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+            { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+            { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+            { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+          ]
+        })));
+        return;
+      }
+    }
+    setQSetQuestions([
+      {
+        question_text: '',
+        show_at_seconds: 5,
+        options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
           { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
           { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
-        ]);
-        return;
+        ]
       }
-    }
-    setQSetPrompt('');
-    setQSetTriggerSeconds(5);
-    setQSetOptions([
-      { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
-      { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
-      { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
-      { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
     ]);
   }, [qSetSelectedScenarioId, qSetSetNumber, scenarios]);
+
 
   const handleAddSection = () => {
     if (!newSectionName.trim()) return;
@@ -359,47 +444,44 @@ export default function AdminConsole() {
     }
     setQSetSelectedScenarioId(scenarios[0].id);
     setQSetSetNumber(1);
-    setQSetPrompt('');
-    setQSetTriggerSeconds(5);
-    setQSetOptions([
-      { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
-      { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
-      { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
-      { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+    setQSetQuestions([
+      {
+        question_text: '',
+        show_at_seconds: 5,
+        options: [
+          { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+          { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+          { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+          { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+        ]
+      }
     ]);
     setIsQuestionSetModalOpen(true);
   };
 
   const handleSaveQuestionSet = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!qSetSelectedScenarioId || !qSetPrompt.trim()) return;
+    if (!qSetSelectedScenarioId) return;
 
     setScenarios(prev => prev.map(s => {
       if (s.id === qSetSelectedScenarioId) {
-        const questionsList = s.questions ? [...s.questions] : [];
-        const existingQIdx = questionsList.findIndex((q: any) => q.sequence_order === qSetSetNumber);
+        const otherQuestions = s.questions ? s.questions.filter((q: any) => q.sequence_order !== qSetSetNumber) : [];
 
-        // Generate options with IDs if they don't have them
-        const mappedOptions = qSetOptions.map(opt => ({
-          ...opt,
-          id: opt.id || 'opt_' + opt.option_letter.toLowerCase() + '_' + Math.random().toString(36).substring(2, 9)
-        }));
+        const newQs = qSetQuestions.map((q: any) => {
+          const mappedOptions = q.options.map((opt: any) => ({
+            ...opt,
+            id: opt.id || 'opt_' + opt.option_letter.toLowerCase() + '_' + Math.random().toString(36).substring(2, 9)
+          }));
+          return {
+            id: q.id || 'q_' + Math.random().toString(36).substring(2, 9),
+            sequence_order: qSetSetNumber,
+            question_text: q.question_text,
+            show_at_seconds: q.show_at_seconds,
+            options: mappedOptions
+          };
+        });
 
-        const questionData = {
-          id: questionsList[existingQIdx]?.id || 'q_' + Math.random().toString(36).substring(2, 9),
-          sequence_order: qSetSetNumber,
-          question_text: qSetPrompt,
-          show_at_seconds: qSetTriggerSeconds,
-          options: mappedOptions
-        };
-
-        if (existingQIdx >= 0) {
-          questionsList[existingQIdx] = questionData;
-        } else {
-          questionsList.push(questionData);
-        }
-
-        // Sort questions by sequence order
+        const questionsList = [...otherQuestions, ...newQs];
         questionsList.sort((a: any, b: any) => a.sequence_order - b.sequence_order);
 
         return {
@@ -1686,8 +1768,8 @@ export default function AdminConsole() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveQuestionSet} className="space-y-5">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+              <form onSubmit={handleSaveQuestionSet} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
                   <div className="space-y-1">
                     <label className="text-[10px] text-zinc-500 font-bold uppercase block">Select Scenario</label>
                     <select
@@ -1712,99 +1794,109 @@ export default function AdminConsole() {
                       <option value={3}>Set 3 (Year 3 Tracking)</option>
                     </select>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Trigger time (sec)</label>
-                    <input 
-                      type="number"
-                      required
-                      min="0"
-                      value={qSetTriggerSeconds}
-                      onChange={(e) => setQSetTriggerSeconds(Number(e.target.value))}
-                      className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
-                    />
-                  </div>
                 </div>
 
-                <div className="space-y-1 text-left">
-                  <label className="text-[10px] text-zinc-500 font-bold uppercase">Question Prompt</label>
-                  <input 
-                    type="text"
-                    required
-                    placeholder="e.g. The flight controls fail. What is your mechanical strategy?"
-                    value={qSetPrompt}
-                    onChange={(e) => setQSetPrompt(e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
-                  />
-                </div>
+                <div className="space-y-6 max-h-[50vh] overflow-y-auto pr-1">
+                  {qSetQuestions.map((q: any, qIdx: number) => (
+                    <div key={qIdx} className="space-y-4 p-4 rounded-2xl border border-zinc-900 bg-zinc-900/10 text-left relative">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-teal-400">Question #{qIdx + 1}</span>
+                        {qSetQuestions.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQuestionFromSet(qIdx)}
+                            className="text-red-500 hover:text-red-400 text-[10px] font-bold px-2 py-0.5 rounded bg-red-950/20 border border-red-900/30"
+                          >
+                            Remove Question
+                          </button>
+                        )}
+                      </div>
 
-                <div className="space-y-3 pt-3 border-t border-zinc-900">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block text-left">Choices & Dimension Weight Mappings</span>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {qSetOptions.map((opt: any, oIdx: number) => (
-                      <div key={oIdx} className="p-3.5 rounded-2xl bg-zinc-900/50 border border-zinc-900 space-y-2.5 text-left">
-                        <span className="text-[10px] font-extrabold text-teal-400 block">Choice Option {opt.option_letter}</span>
-                        <input 
-                          type="text"
-                          required
-                          placeholder="Choice text"
-                          value={opt.option_text}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setQSetOptions(prev => {
-                              const copy = [...prev];
-                              copy[oIdx] = { ...copy[oIdx], option_text: val };
-                              return copy;
-                            });
-                          }}
-                          className="w-full bg-zinc-900 border border-zinc-800 rounded py-1 px-2 text-[10px] focus:outline-none text-zinc-300"
-                        />
-                        
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-650 block font-bold">DIMENSION</label>
-                            <select
-                              value={opt.target_dimension}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setQSetOptions(prev => {
-                                  const copy = [...prev];
-                                  copy[oIdx] = { ...copy[oIdx], target_dimension: val };
-                                  return copy;
-                                });
-                              }}
-                              className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-400"
-                            >
-                              <option value="The Builder">Builder</option>
-                              <option value="The Thinker">Thinker</option>
-                              <option value="The Creator">Creator</option>
-                              <option value="The Connector">Connector</option>
-                              <option value="The Leader">Leader</option>
-                              <option value="The Organizer">Organizer</option>
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-650 block font-bold">WEIGHT</label>
-                            <input 
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              max="1"
-                              required
-                              value={opt.intensity_weight}
-                              onChange={(e) => {
-                                const val = Number(e.target.value);
-                                setQSetOptions(prev => {
-                                  const copy = [...prev];
-                                  copy[oIdx] = { ...copy[oIdx], intensity_weight: val };
-                                  return copy;
-                                });
-                              }}
-                              className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-350 text-center"
-                            />
-                          </div>
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="md:col-span-3 space-y-1">
+                          <label className="text-[10px] text-zinc-500 font-bold uppercase block">Question Prompt</label>
+                          <input 
+                            type="text"
+                            required
+                            placeholder="e.g. The flight controls fail. What is your mechanical strategy?"
+                            value={q.question_text}
+                            onChange={(e) => handleQuestionTextChange(qIdx, e.target.value)}
+                            className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-zinc-500 font-bold uppercase block">Trigger time (sec)</label>
+                          <input 
+                            type="number"
+                            required
+                            min="0"
+                            value={q.show_at_seconds}
+                            onChange={(e) => handleQuestionSecondsChange(qIdx, Number(e.target.value))}
+                            className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                          />
                         </div>
                       </div>
-                    ))}
+
+                      <div className="space-y-3 pt-3 border-t border-zinc-900/60">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block text-left">Choices & Dimension Weight Mappings</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {q.options.map((opt: any, oIdx: number) => (
+                            <div key={oIdx} className="p-3.5 rounded-2xl bg-zinc-900/50 border border-zinc-900 space-y-2.5 text-left">
+                              <span className="text-[10px] font-extrabold text-teal-400 block">Choice Option {opt.option_letter}</span>
+                              <input 
+                                type="text"
+                                required
+                                placeholder="Choice text"
+                                value={opt.option_text}
+                                onChange={(e) => handleOptionTextChange(qIdx, oIdx, e.target.value)}
+                                className="w-full bg-zinc-900 border border-zinc-800 rounded py-1 px-2 text-[10px] focus:outline-none text-zinc-300"
+                              />
+                              
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[8px] text-zinc-650 block font-bold">DIMENSION</label>
+                                  <select
+                                    value={opt.target_dimension}
+                                    onChange={(e) => handleOptionDimensionChange(qIdx, oIdx, e.target.value)}
+                                    className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-400"
+                                  >
+                                    <option value="The Builder">Builder</option>
+                                    <option value="The Thinker">Thinker</option>
+                                    <option value="The Creator">Creator</option>
+                                    <option value="The Connector">Connector</option>
+                                    <option value="The Leader">Leader</option>
+                                    <option value="The Organizer">Organizer</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[8px] text-zinc-650 block font-bold">WEIGHT</label>
+                                  <input 
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="1"
+                                    required
+                                    value={opt.intensity_weight}
+                                    onChange={(e) => handleOptionWeightChange(qIdx, oIdx, Number(e.target.value))}
+                                    className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-350 text-center"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex justify-start pt-2">
+                    <button
+                      type="button"
+                      onClick={handleAddQuestionToSet}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-955/20 hover:bg-teal-955/45 border border-teal-900/40 text-teal-400 text-xs font-bold transition-all shadow-[0_0_10px_rgba(20,184,166,0.05)] hover:shadow-[0_0_15px_rgba(20,184,166,0.1)]"
+                    >
+                      <span className="text-sm font-extrabold">+</span> Add More Questions
+                    </button>
                   </div>
                 </div>
 
