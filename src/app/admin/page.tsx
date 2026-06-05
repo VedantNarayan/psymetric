@@ -329,6 +329,71 @@ export default function AdminConsole() {
   const [scenarioFocusCategory, setScenarioFocusCategory] = useState<string>('STEM');
   const [isFocusDropdownOpen, setIsFocusDropdownOpen] = useState<boolean>(false);
 
+  // Video upload states
+  const [uploadingVideo, setUploadingVideo] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [showManualUrl, setShowManualUrl] = useState<boolean>(false);
+
+  const handleVideoUpload = async (file: File) => {
+    if (!file) return;
+    
+    // Validate file type
+    const validTypes = ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'];
+    if (!validTypes.includes(file.type) && !file.name.endsWith('.mp4') && !file.name.endsWith('.mov') && !file.name.endsWith('.webm') && !file.name.endsWith('.mkv')) {
+      setUploadError('Invalid format. Please upload an MP4, MOV, WebM or MKV video.');
+      return;
+    }
+
+    // Validate size (500MB max)
+    const maxSize = 500 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setUploadError('File is too large. Max allowed size is 500MB.');
+      return;
+    }
+
+    setUploadingVideo(true);
+    setUploadProgress(0);
+    setUploadError(null);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { data, error } = await supabase.storage
+        .from('videos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+          // @ts-ignore
+          onUploadProgress: (progress: any) => {
+            const percentage = (progress.loaded / progress.total) * 100;
+            setUploadProgress(Math.round(percentage));
+          }
+        } as any);
+
+      if (error) {
+        throw error;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('videos')
+        .getPublicUrl(filePath);
+
+      setScenarioVideoUrl(publicUrl);
+      setUploadProgress(100);
+      setTimeout(() => {
+        setUploadingVideo(false);
+      }, 800);
+    } catch (err: any) {
+      console.error('Error uploading video:', err);
+      setUploadError(err.message || 'Failed to upload video. Please try again.');
+      setUploadingVideo(false);
+    }
+  };
+
   // Simulator state variables
   const [simScenarioId, setSimScenarioId] = useState<string>('');
   const [simSetNumber, setSimSetNumber] = useState<number>(1);
@@ -767,6 +832,14 @@ export default function AdminConsole() {
     setScenarioExpectedTime(scen.expected_time || 60);
     setScenarioFocusCategory(scen.focus_category || 'STEM');
     setScenarioQuestions(scen.questions ? JSON.parse(JSON.stringify(scen.questions)) : []);
+    
+    // Reset video upload states
+    setUploadingVideo(false);
+    setUploadProgress(0);
+    setUploadError(null);
+    setIsDragOver(false);
+    setShowManualUrl(false);
+    
     setIsScenarioModalOpen(true);
   };
 
@@ -779,6 +852,14 @@ export default function AdminConsole() {
     setScenarioExpectedTime(60);
     setScenarioFocusCategory('STEM');
     setScenarioQuestions([]); // Initialize questions list as empty on creation
+    
+    // Reset video upload states
+    setUploadingVideo(false);
+    setUploadProgress(0);
+    setUploadError(null);
+    setIsDragOver(false);
+    setShowManualUrl(false);
+    
     setIsScenarioModalOpen(true);
   };
 
@@ -3384,6 +3465,7 @@ export default function AdminConsole() {
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
                     />
                   </div>
+                  {/* Metadata Row 1: Target Cohort Age & Focus Domain */}
                   <div className="grid grid-cols-2 gap-3 text-left">
                     <div className="space-y-1">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase block">Target Cohort Age</label>
@@ -3397,50 +3479,13 @@ export default function AdminConsole() {
                         <option value="11-12">High School (11-12)</option>
                       </select>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Video URL (.mp4)</label>
-                      <input 
-                        type="text"
-                        required
-                        placeholder="e.g. /videos/assembly.mp4"
-                        value={scenarioVideoUrl}
-                        onChange={(e) => setScenarioVideoUrl(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
-                      />
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-left">
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Status</label>
-                      <select 
-                        value={scenarioStatus}
-                        onChange={(e) => setScenarioStatus(e.target.value as any)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
-                      >
-                        <option value="Published">Published</option>
-                        <option value="Draft">Draft</option>
-                        <option value="Archived">Archived</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Expected Time (sec)</label>
-                      <input 
-                        type="number"
-                        required
-                        min="10"
-                        max="300"
-                        value={scenarioExpectedTime}
-                        onChange={(e) => setScenarioExpectedTime(Number(e.target.value))}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
-                      />
-                    </div>
                     <div className="space-y-1 relative text-left">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase block">Focus Domain</label>
                       <button
                         type="button"
                         onClick={() => setIsFocusDropdownOpen(!isFocusDropdownOpen)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white text-left flex justify-between items-center hover:border-zinc-700 transition-all"
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white text-left flex justify-between items-center hover:border-zinc-700 transition-all h-[34px]"
                       >
                         <span className="truncate">
                           {scenarioFocusCategory || 'Select focus domain...'}
@@ -3487,6 +3532,172 @@ export default function AdminConsole() {
                         </>
                       )}
                     </div>
+                  </div>
+
+                  {/* Metadata Row 2: Status & Expected Time */}
+                  <div className="grid grid-cols-2 gap-3 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Status</label>
+                      <select 
+                        value={scenarioStatus}
+                        onChange={(e) => setScenarioStatus(e.target.value as any)}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                      >
+                        <option value="Published">Published</option>
+                        <option value="Draft">Draft</option>
+                        <option value="Archived">Archived</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Expected Time (sec)</label>
+                      <input 
+                        type="number"
+                        required
+                        min="10"
+                        max="300"
+                        value={scenarioExpectedTime}
+                        onChange={(e) => setScenarioExpectedTime(Number(e.target.value))}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Scenario Video Asset Upload Zone */}
+                  <div className="space-y-2 text-left">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Scenario Video Asset</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowManualUrl(!showManualUrl)}
+                        className="text-[10px] text-purple-400 hover:text-purple-300 font-bold transition-all"
+                      >
+                        {showManualUrl ? "✕ Hide Manual URL" : "✎ Paste direct URL"}
+                      </button>
+                    </div>
+
+                    {/* Drag and Drop Zone */}
+                    {!showManualUrl && (
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(true);
+                        }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragOver(false);
+                          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                            handleVideoUpload(e.dataTransfer.files[0]);
+                          }
+                        }}
+                        className={`relative border border-dashed rounded-2xl p-6 transition-all duration-300 text-center flex flex-col items-center justify-center min-h-[140px] ${
+                          isDragOver 
+                            ? 'border-purple-500 bg-purple-500/5 shadow-inner scale-[0.99]' 
+                            : scenarioVideoUrl 
+                              ? 'border-zinc-850 bg-zinc-950/45' 
+                              : 'border-zinc-850 hover:border-zinc-750 bg-zinc-900/40 hover:bg-zinc-900/70'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept="video/mp4,video/quicktime,video/webm"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files.length > 0) {
+                              handleVideoUpload(e.target.files[0]);
+                            }
+                          }}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          disabled={uploadingVideo}
+                        />
+
+                        {uploadingVideo ? (
+                          <div className="w-full space-y-3 flex flex-col items-center py-2">
+                            <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+                            <div className="space-y-1.5 w-full max-w-[200px] text-center">
+                              <p className="text-[11px] font-extrabold text-zinc-300">Uploading Video...</p>
+                              <div className="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden border border-zinc-850">
+                                <div 
+                                  className="bg-gradient-to-r from-purple-500 to-indigo-500 h-full rounded-full transition-all duration-300"
+                                  style={{ width: `${uploadProgress}%` }}
+                                />
+                              </div>
+                              <p className="text-[9px] text-zinc-500 font-bold">{uploadProgress}% Complete</p>
+                            </div>
+                          </div>
+                        ) : scenarioVideoUrl ? (
+                          <div className="w-full flex flex-col sm:flex-row items-center gap-4 py-1 text-left relative z-20">
+                            <div className="relative w-full sm:w-36 h-20 bg-black rounded-lg overflow-hidden border border-zinc-850 flex items-center justify-center group shrink-0">
+                              <video
+                                src={scenarioVideoUrl}
+                                muted
+                                loop
+                                autoPlay
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                                <span className="text-[9px] font-extrabold text-white bg-zinc-900/80 px-2 py-1 rounded-md">Preview</span>
+                              </div>
+                            </div>
+                            <div className="flex-1 space-y-2 w-full">
+                              <div>
+                                <div className="flex items-center gap-1.5 text-teal-400 font-extrabold text-xs">
+                                  <CheckCircle className="w-3.5 h-3.5" />
+                                  <span>Video Ready</span>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 font-mono mt-1 select-all break-all overflow-hidden line-clamp-1 max-w-[220px]">
+                                  {scenarioVideoUrl.split('/').pop()}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setScenarioVideoUrl('');
+                                }}
+                                className="px-2.5 py-1 bg-red-950/40 hover:bg-red-900/30 text-red-400 hover:text-red-300 border border-red-900/30 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" /> Remove Video
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 py-2 flex flex-col items-center pointer-events-none">
+                            <div className="p-3 bg-zinc-900/80 border border-zinc-800 rounded-full text-zinc-400">
+                              <Video className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-zinc-300">
+                                Drag &amp; drop video file or <span className="text-purple-400 underline decoration-dashed">browse</span>
+                              </p>
+                              <p className="text-[9px] text-zinc-500 mt-0.5">MP4, MOV, WebM or MKV formats (Max 500MB)</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Manual Paste Direct URL */}
+                    {(showManualUrl || (!scenarioVideoUrl && !uploadingVideo)) && (
+                      <div className={`space-y-1 transition-all duration-300 ${!showManualUrl ? 'hidden sm:block' : ''}`}>
+                        {!showManualUrl && (
+                          <div className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">Alternative: Direct MP4 Link</div>
+                        )}
+                        <input 
+                          type="text"
+                          placeholder="e.g. https://domain.com/videos/scene.mp4"
+                          value={scenarioVideoUrl}
+                          onChange={(e) => setScenarioVideoUrl(e.target.value)}
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {uploadError && (
+                      <div className="flex items-center gap-1.5 bg-red-950/20 border border-red-900/30 rounded-lg p-2.5 text-red-400 text-[9px] font-bold">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{uploadError}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
