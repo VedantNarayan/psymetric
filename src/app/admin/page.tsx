@@ -234,9 +234,10 @@ export default function AdminConsole() {
   const filteredStudents = studentsList.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesClass = filterClass === 'All' || s.class === filterClass;
+    const matchesSection = filterClass === 'All' || filterSection === 'All' || s.section === filterSection;
     const matchesTrait = filterTrait === 'All' || s.trait === filterTrait;
     const matchesStatus = filterStatus === 'All' || s.status === filterStatus;
-    return matchesSearch && matchesClass && matchesTrait && matchesStatus;
+    return matchesSearch && matchesClass && matchesSection && matchesTrait && matchesStatus;
   });
 
   return (
@@ -486,7 +487,7 @@ export default function AdminConsole() {
 
             {/* Fuzzy Search Panel */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-              <div className="md:col-span-6 relative">
+              <div className={filterClass !== 'All' ? "md:col-span-4 relative" : "md:col-span-6 relative"}>
                 <Search className="absolute left-3.5 top-3.5 w-5 h-5 text-zinc-500" />
                 <input
                   type="text"
@@ -500,7 +501,10 @@ export default function AdminConsole() {
               <div className="md:col-span-2">
                 <select
                   value={filterClass}
-                  onChange={(e) => setFilterClass(e.target.value)}
+                  onChange={(e) => {
+                    setFilterClass(e.target.value);
+                    setFilterSection('All');
+                  }}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 px-4 text-xs text-white"
                 >
                   <option value="All">Class: All</option>
@@ -511,6 +515,21 @@ export default function AdminConsole() {
                   <option value="12">Class 12</option>
                 </select>
               </div>
+
+              {filterClass !== 'All' && academicClasses[filterClass] && (
+                <div className="md:col-span-2 animate-fadeIn">
+                  <select
+                    value={filterSection}
+                    onChange={(e) => setFilterSection(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 px-4 text-xs text-white"
+                  >
+                    <option value="All">Section: All</option>
+                    {academicClasses[filterClass].map(sec => (
+                      <option key={sec} value={sec}>Section: {sec}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="md:col-span-2">
                 <select
