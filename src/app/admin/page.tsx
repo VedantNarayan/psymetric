@@ -307,6 +307,7 @@ export default function AdminConsole() {
   const [scenarioStatus, setScenarioStatus] = useState<'Draft' | 'Published' | 'Archived'>('Published');
   const [scenarioExpectedTime, setScenarioExpectedTime] = useState<number>(60);
   const [scenarioFocusCategory, setScenarioFocusCategory] = useState<string>('STEM');
+  const [isFocusDropdownOpen, setIsFocusDropdownOpen] = useState<boolean>(false);
 
   // Simulator state variables
   const [simScenarioId, setSimScenarioId] = useState<string>('');
@@ -1750,9 +1751,11 @@ export default function AdminConsole() {
                               }`}>
                                 {scen.status || 'Published'}
                               </span>
-                              <span className="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-[9px] text-zinc-400 uppercase tracking-wider font-mono">
-                                {scen.focus_category || 'STEM'}
-                              </span>
+                              {(scen.focus_category || 'STEM').split(',').map((cat: string) => (
+                                <span key={cat.trim()} className="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-[9px] text-zinc-400 uppercase tracking-wider font-mono">
+                                  {cat.trim()}
+                                </span>
+                              ))}
                               <span className="text-zinc-500 text-[10px]">ID: {scen.id}</span>
                             </div>
                             <h4 className="text-base font-extrabold text-white flex items-center gap-2">
@@ -1857,7 +1860,9 @@ export default function AdminConsole() {
                               <div className="text-[10px] text-zinc-500 font-mono mt-0.5 flex items-center gap-1.5">
                                 <span>{scen.target_age_group === 'All' ? 'All Grades' : `Grades ${scen.target_age_group}`}</span>
                                 <span>•</span>
-                                <span className="text-zinc-600 uppercase">{scen.focus_category || 'STEM'}</span>
+                                <span className="text-zinc-600 uppercase">
+                                  {(scen.focus_category || 'STEM').split(',').map((c: string) => c.trim()).join(' | ')}
+                                </span>
                               </div>
                             </td>
 
@@ -1986,7 +1991,10 @@ export default function AdminConsole() {
                           <span className="text-[10px] font-bold text-zinc-500 uppercase block tracking-wider">Focus Domains</span>
                           <div className="grid grid-cols-2 gap-2">
                             {['STEM', 'Creative Arts', 'Leadership', 'Interpersonal Care', 'Systems & Logic'].map(cat => {
-                              const count = scenarios.filter(s => s.focus_category === cat || (!s.focus_category && cat === 'STEM')).length;
+                              const count = scenarios.filter(s => {
+                                const cats = (s.focus_category || 'STEM').split(',').map((c: string) => c.trim());
+                                return cats.includes(cat);
+                              }).length;
                               return (
                                 <div key={cat} className="flex justify-between items-center p-2 px-3 bg-zinc-900/40 border border-zinc-900 rounded-xl text-xs">
                                   <span className="text-zinc-400 font-medium">{cat}</span>
@@ -2888,19 +2896,57 @@ export default function AdminConsole() {
                         className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
                       />
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1 relative text-left">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase block">Focus Domain</label>
-                      <select 
-                        value={scenarioFocusCategory}
-                        onChange={(e) => setScenarioFocusCategory(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                      <button
+                        type="button"
+                        onClick={() => setIsFocusDropdownOpen(!isFocusDropdownOpen)}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white text-left flex justify-between items-center hover:border-zinc-700 transition-all"
                       >
-                        <option value="STEM">STEM</option>
-                        <option value="Creative Arts">Creative Arts</option>
-                        <option value="Leadership">Leadership</option>
-                        <option value="Interpersonal Care">Interpersonal Care</option>
-                        <option value="Systems & Logic">Systems & Logic</option>
-                      </select>
+                        <span className="truncate">
+                          {scenarioFocusCategory || 'Select focus domain...'}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">▼</span>
+                      </button>
+                      
+                      {isFocusDropdownOpen && (
+                        <>
+                          <div 
+                            className="fixed inset-0 z-45" 
+                            onClick={() => setIsFocusDropdownOpen(false)} 
+                          />
+                          <div className="absolute z-50 left-0 right-0 mt-1 bg-zinc-950 border border-zinc-800 rounded-xl p-1.5 shadow-2xl space-y-0.5 max-h-48 overflow-y-auto">
+                            {['STEM', 'Creative Arts', 'Leadership', 'Interpersonal Care', 'Systems & Logic'].map((dom) => {
+                              const selectedDomains = scenarioFocusCategory
+                                ? scenarioFocusCategory.split(',').map((s: string) => s.trim()).filter(Boolean)
+                                : [];
+                              const isSelected = selectedDomains.includes(dom);
+                              return (
+                                <button
+                                  key={dom}
+                                  type="button"
+                                  onClick={() => {
+                                    let newSelected;
+                                    if (isSelected) {
+                                      newSelected = selectedDomains.filter(d => d !== dom);
+                                    } else {
+                                      newSelected = [...selectedDomains, dom];
+                                    }
+                                    if (newSelected.length === 0) newSelected = ['STEM'];
+                                    setScenarioFocusCategory(newSelected.join(', '));
+                                  }}
+                                  className="w-full flex items-center justify-between px-3 py-2 text-left text-xs text-zinc-300 hover:text-white hover:bg-zinc-900 rounded-lg transition-all"
+                                >
+                                  <span>{dom}</span>
+                                  {isSelected && (
+                                    <span className="text-teal-400 font-extrabold text-xs">✓</span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
