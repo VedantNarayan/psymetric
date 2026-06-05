@@ -122,14 +122,19 @@ export async function POST(req: NextRequest) {
           console.error('Error fetching selected option details:', optionError);
           return NextResponse.json({ error: 'Selected option not found' }, { status: 404 });
         }
-
         const dimensionMap: Record<string, string> = {
           'Realistic': 'R',
+          'The Builder': 'R',
           'Investigative': 'I',
+          'The Thinker': 'I',
           'Artistic': 'A',
+          'The Creator': 'A',
           'Social': 'S',
+          'The Connector': 'S',
           'Enterprising': 'E',
-          'Conventional': 'C'
+          'The Leader': 'E',
+          'Conventional': 'C',
+          'The Organizer': 'C'
         };
 
         const dimensions = (option.target_dimension || '')
@@ -462,15 +467,20 @@ function handleInMemoryFallback(
           }
           if (foundOption) break;
         }
-
         if (foundOption) {
           const dimensionMap: Record<string, string> = {
             'Realistic': 'R',
+            'The Builder': 'R',
             'Investigative': 'I',
+            'The Thinker': 'I',
             'Artistic': 'A',
+            'The Creator': 'A',
             'Social': 'S',
+            'The Connector': 'S',
             'Enterprising': 'E',
-            'Conventional': 'C'
+            'The Leader': 'E',
+            'Conventional': 'C',
+            'The Organizer': 'C'
           };
 
           const dimensions = (foundOption.target_dimension || '')
