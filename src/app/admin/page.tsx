@@ -2458,9 +2458,9 @@ export default function AdminConsole() {
                     <thead>
                       <tr className="bg-zinc-900/40 border-b border-zinc-900 text-zinc-500 font-bold uppercase tracking-wider">
                         <th className="p-4">Scenario Backdrop</th>
-                        <th className="p-4 text-center">Set 1 (Initial Year)</th>
-                        <th className="p-4 text-center">Set 2 (Year 2)</th>
-                        <th className="p-4 text-center">Set 3 (Year 3)</th>
+                        <th className="p-4 text-center">Set 1</th>
+                        <th className="p-4 text-center">Set 2</th>
+                        <th className="p-4 text-center">Set 3</th>
                         <th className="p-4 text-center">Status</th>
                       </tr>
                     </thead>
@@ -2695,9 +2695,9 @@ export default function AdminConsole() {
                             onChange={(e) => setSimSetNumber(Number(e.target.value))}
                             className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 px-3 text-xs focus:outline-none text-white focus:border-purple-500/50"
                           >
-                            <option value={1}>Set 1 (Initial Year)</option>
-                            <option value={2}>Set 2 (Year 2)</option>
-                            <option value={3}>Set 3 (Year 3)</option>
+                            <option value={1}>Set 1</option>
+                            <option value={2}>Set 2</option>
+                            <option value={3}>Set 3</option>
                           </select>
                         </div>
                         <button
@@ -3774,9 +3774,9 @@ export default function AdminConsole() {
                       onChange={(e) => setQSetSetNumber(Number(e.target.value))}
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
                     >
-                      <option value={1}>Set 1 (Initial Year)</option>
-                      <option value={2}>Set 2 (Year 2 Tracking)</option>
-                      <option value={3}>Set 3 (Year 3 Tracking)</option>
+                      <option value={1}>Set 1</option>
+                      <option value={2}>Set 2</option>
+                      <option value={3}>Set 3</option>
                     </select>
                   </div>
                 </div>
