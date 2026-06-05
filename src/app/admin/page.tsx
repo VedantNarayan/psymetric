@@ -7,9 +7,10 @@ import {
   BarChart3, Settings, Video, Upload, Shield, 
   Trash2, Plus, Sparkles, Sliders, Users, 
   Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2, Pencil,
-  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle
+  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { fallbackScenarios } from '@/lib/supabase/fallbackData';
 
 // Seed initial mock student profiles for the explorer
 const INITIAL_STUDENTS = [
@@ -30,7 +31,7 @@ export default function AdminConsole() {
   const [currentRole, setCurrentRole] = useState<'super_admin' | 'school_admin'>('school_admin');
   
   // Tab Navigation
-  const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings'>('mission_control');
+  const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings' | 'schools'>('mission_control');
 
   // School Specific Info
   const [schoolLogo, setSchoolLogo] = useState<string>('/psymetric-icon.png');
@@ -80,8 +81,35 @@ export default function AdminConsole() {
     avgScore: 84
   });
 
+  // Super Admin: Enrolled Schools state
+  const [schoolsList, setSchoolsList] = useState<any[]>([
+    { id: 'sch1', name: 'DAV Public School', board: 'CBSE', location: 'Bengaluru, Karnataka', contact: 'principal@dav.edu', active: true, totalCredits: 500, usedCredits: 180 },
+    { id: 'sch2', name: 'Delhi Public School', board: 'CBSE', location: 'New Delhi, Delhi', contact: 'admin@dps.edu', active: true, totalCredits: 300, usedCredits: 98 },
+    { id: 'sch3', name: 'Jamnabai Narsee School', board: 'ICSE', location: 'Mumbai, Maharashtra', contact: 'contact@jamnabai.edu', active: false, totalCredits: 100, usedCredits: 100 }
+  ]);
+
+  // Modals & Forms states
+  const [isScenarioModalOpen, setIsScenarioModalOpen] = useState(false);
+  const [editingScenario, setEditingScenario] = useState<any | null>(null);
+  
+  const [scenarioTitle, setScenarioTitle] = useState('');
+  const [scenarioVideoUrl, setScenarioVideoUrl] = useState('');
+  const [scenarioAgeGroup, setScenarioAgeGroup] = useState('All');
+  const [scenarioQuestions, setScenarioQuestions] = useState<any[]>([]);
+
+  const [isSchoolModalOpen, setIsSchoolModalOpen] = useState(false);
+  const [newSchoolName, setNewSchoolName] = useState('');
+  const [newSchoolBoard, setNewSchoolBoard] = useState('CBSE');
+  const [newSchoolLocation, setNewSchoolLocation] = useState('');
+  const [newSchoolContact, setNewSchoolContact] = useState('');
+  const [newSchoolCredits, setNewSchoolCredits] = useState(100);
+
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [creditSelectedSchool, setCreditSelectedSchool] = useState<any | null>(null);
+  const [creditAmount, setCreditAmount] = useState(100);
+
   // Question editing scenario list
-  const [scenarios, setScenarios] = useState<any[]>([]);
+  const [scenarios, setScenarios] = useState<any[]>(fallbackScenarios);
 
   useEffect(() => {
     // Check authentication
@@ -150,6 +178,138 @@ export default function AdminConsole() {
     setAcademicClasses(prev => ({
       ...prev,
       [cls]: prev[cls].filter(s => s !== sec)
+    }));
+  };
+
+  // Load scenario details for editing
+  const handleEditScenarioClick = (scen: any) => {
+    setEditingScenario(scen);
+    setScenarioTitle(scen.title);
+    setScenarioVideoUrl(scen.video_url);
+    setScenarioAgeGroup(scen.target_age_group || 'All');
+    setScenarioQuestions(scen.questions ? JSON.parse(JSON.stringify(scen.questions)) : []);
+    setIsScenarioModalOpen(true);
+  };
+
+  const handleCreateScenarioClick = () => {
+    setEditingScenario(null);
+    setScenarioTitle('');
+    setScenarioVideoUrl('');
+    setScenarioAgeGroup('All');
+    setScenarioQuestions([
+      {
+        id: 'q_' + Math.random().toString(36).substring(2, 9),
+        sequence_order: 1,
+        question_text: '',
+        show_at_seconds: 5,
+        options: [
+          { id: 'opt_a_' + Math.random().toString(36).substring(2, 9), option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+          { id: 'opt_b_' + Math.random().toString(36).substring(2, 9), option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+          { id: 'opt_c_' + Math.random().toString(36).substring(2, 9), option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+          { id: 'opt_d_' + Math.random().toString(36).substring(2, 9), option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+        ]
+      }
+    ]);
+    setIsScenarioModalOpen(true);
+  };
+
+  const handleSaveScenario = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!scenarioTitle.trim() || !scenarioVideoUrl.trim()) return;
+
+    if (editingScenario) {
+      setScenarios(prev => prev.map(s => {
+        if (s.id === editingScenario.id) {
+          return {
+            ...s,
+            title: scenarioTitle,
+            video_url: scenarioVideoUrl,
+            target_age_group: scenarioAgeGroup,
+            questions: scenarioQuestions
+          };
+        }
+        return s;
+      }));
+    } else {
+      const newScen = {
+        id: 'scen_' + Math.random().toString(36).substring(2, 9),
+        title: scenarioTitle,
+        video_url: scenarioVideoUrl,
+        target_age_group: scenarioAgeGroup,
+        is_active: true,
+        questions: scenarioQuestions
+      };
+      setScenarios(prev => [...prev, newScen]);
+    }
+    setIsScenarioModalOpen(false);
+  };
+
+  const handleDeleteScenario = (id: string) => {
+    if (confirm('Are you sure you want to delete this scenario?')) {
+      setScenarios(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const handleCreateSchool = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSchoolName.trim()) return;
+    const newSchool = {
+      id: 'sch_' + Math.random().toString(36).substring(2, 9),
+      name: newSchoolName,
+      board: newSchoolBoard,
+      location: newSchoolLocation,
+      contact: newSchoolContact,
+      active: true,
+      totalCredits: newSchoolCredits,
+      usedCredits: 0
+    };
+    setSchoolsList(prev => [...prev, newSchool]);
+    setIsSchoolModalOpen(false);
+    
+    // Clear forms
+    setNewSchoolName('');
+    setNewSchoolLocation('');
+    setNewSchoolContact('');
+    setNewSchoolCredits(100);
+  };
+
+  const handleToggleSchoolActive = (id: string) => {
+    setSchoolsList(prev => prev.map(s => {
+      if (s.id === id) {
+        return { ...s, active: !s.active };
+      }
+      return s;
+    }));
+  };
+
+  const handleAllocateCreditsSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!creditSelectedSchool) return;
+    setSchoolsList(prev => prev.map(s => {
+      if (s.id === creditSelectedSchool.id) {
+        return { ...s, totalCredits: Number(s.totalCredits) + Number(creditAmount) };
+      }
+      return s;
+    }));
+    setIsCreditModalOpen(false);
+  };
+
+  const handleDeleteSchool = (id: string) => {
+    if (confirm('Are you sure you want to delete this school? This will cascade delete its roster and credits.')) {
+      setSchoolsList(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const handleImpersonateSchool = (sch: any) => {
+    setSchoolName(sch.name);
+    setSchoolBoard(sch.board);
+    // Switch to school admin view
+    setCurrentRole('school_admin');
+    setActiveTab('mission_control');
+    // Also mock credit statistics
+    setStats(prev => ({
+      ...prev,
+      creditsLeft: sch.totalCredits - sch.usedCredits
     }));
   };
 
@@ -325,6 +485,14 @@ export default function AdminConsole() {
                   }`}
                 >
                   <Video className="w-4 h-4" /> Scenario Matrix
+                </button>
+                <button
+                  onClick={() => setActiveTab('schools')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                    activeTab === 'schools' ? 'bg-purple-600/10 border border-purple-500/20 text-purple-400' : 'text-zinc-400 hover:bg-zinc-900'
+                  }`}
+                >
+                  <Building className="w-4 h-4" /> Enrolled Schools
                 </button>
                 <button
                   onClick={() => { setCurrentRole('school_admin'); setActiveTab('mission_control'); }}
@@ -769,26 +937,178 @@ export default function AdminConsole() {
         {/* TAB 4: SCENARIOS (SUPER ADMIN MATRIX EDITOR) */}
         {activeTab === 'scenarios' && (
           <div className="space-y-8">
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-white mb-1">Scenario Matrix Creator</h1>
-              <p className="text-zinc-400 text-xs">Manage MP4 loop assets and map dimension intensities</p>
+            <div className="flex justify-between items-center flex-wrap gap-4">
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-white mb-1">Scenario Matrix Creator</h1>
+                <p className="text-zinc-400 text-xs">Manage MP4 loop assets and map dimension intensities</p>
+              </div>
+              <button 
+                onClick={handleCreateScenarioClick}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(168,85,247,0.25)] transition-all"
+              >
+                <Plus className="w-4 h-4" /> Create New Scenario
+              </button>
             </div>
 
-            <div className="p-6 rounded-2xl bg-purple-950/10 border border-purple-500/20 text-xs text-purple-300">
+            <div className="p-6 rounded-3xl bg-purple-950/10 border border-purple-500/20 text-xs text-purple-300">
               <span className="font-bold block mb-1">Super Admin Notice</span>
               You have access to write, edit, and update the cinematic backdrops. Options map weights (0.0 to 1.0) directly into the dimension solver matrix.
             </div>
 
-            {/* Basic fallback Scenario matrix view */}
-            <div className="bg-black/40 border border-zinc-900 rounded-3xl p-6 text-center py-12 text-zinc-500 text-xs">
-              <Video className="w-10 h-10 mx-auto text-zinc-700 mb-2" />
-              <p>Sandbox Super Admin Scenario Database is active in memory.</p>
+            <div className="grid grid-cols-1 gap-6">
+              {scenarios.map((scen) => (
+                <div key={scen.id} className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-4 text-left relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[9px] font-bold text-purple-400 uppercase tracking-wider">
+                          Scenario
+                        </span>
+                        <span className="text-zinc-500 text-[10px]">ID: {scen.id}</span>
+                      </div>
+                      <h4 className="text-base font-extrabold text-white">{scen.title}</h4>
+                      <p className="text-xs text-zinc-500 font-mono">{scen.video_url} • Age: {scen.target_age_group || 'All'}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-start">
+                      <button 
+                        onClick={() => handleEditScenarioClick(scen)}
+                        className="p-2 px-3 rounded-xl bg-zinc-900 border border-zinc-805 hover:bg-zinc-800 text-zinc-300 hover:text-white transition-all text-xs font-bold flex items-center gap-1"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-purple-400" /> Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteScenario(scen.id)}
+                        className="p-2 px-3 rounded-xl bg-red-950/20 border border-red-900/30 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-all text-xs font-bold flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Render questions inside scenario */}
+                  <div className="space-y-3 pt-3 border-t border-zinc-900/60">
+                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">Scored Questions</span>
+                    {scen.questions && scen.questions.length > 0 ? (
+                      scen.questions.map((q: any, qIdx: number) => (
+                        <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-2">
+                          <div className="flex justify-between items-center text-[10px] text-zinc-500">
+                            <span className="font-bold">Q{qIdx + 1} (Order: {q.sequence_order})</span>
+                            <span className="font-bold text-amber-500">Trigger at: {q.show_at_seconds} seconds</span>
+                          </div>
+                          <p className="text-xs text-zinc-200 font-semibold">{q.question_text}</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                            {q.options && q.options.map((opt: any, oIdx: number) => (
+                              <div key={opt.id || oIdx} className="p-2.5 rounded-xl bg-black/40 border border-zinc-900/60 text-[10px] space-y-1">
+                                <span className="font-bold text-teal-400">Option {opt.option_letter}:</span>
+                                <p className="text-zinc-400 line-clamp-1">{opt.option_text}</p>
+                                <div className="flex justify-between text-[8px] text-zinc-600 pt-1 border-t border-zinc-900/40">
+                                  <span>Dimension: <strong className="text-zinc-500">{opt.target_dimension}</strong></span>
+                                  <span>Weight: <strong className="text-zinc-500">{opt.intensity_weight}</strong></span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-zinc-600 italic">No questions added to this scenario yet.</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: SCHOOLS DIRECTORY (SUPER ADMIN SCHOOLS MANAGER) */}
+        {activeTab === 'schools' && (
+          <div className="space-y-8">
+            <div className="flex justify-between items-center flex-wrap gap-4">
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-white mb-1">Enrolled School Directory</h1>
+                <p className="text-zinc-400 text-xs">Register partner institutions, toggle statuses, and allocate credit balances</p>
+              </div>
               <button 
-                onClick={() => alert('Create scenario drawer opened.')}
-                className="mt-4 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold"
+                onClick={() => setIsSchoolModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(168,85,247,0.25)] transition-all"
               >
-                + Create New Scenario
+                <Plus className="w-4.5 h-4.5" /> Enroll New School
               </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6">
+              {schoolsList.map((sch) => (
+                <div key={sch.id} className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-4 text-left relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[9px] font-bold text-teal-400 uppercase tracking-wider">
+                          Board: {sch.board}
+                        </span>
+                        <span className="text-zinc-500 text-[10px]">ID: {sch.id}</span>
+                      </div>
+                      <h4 className="text-base font-extrabold text-white">{sch.name}</h4>
+                      <p className="text-xs text-zinc-400">{sch.location} • {sch.contact}</p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <button 
+                        onClick={() => handleImpersonateSchool(sch)}
+                        className="px-3.5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-black text-xs font-extrabold flex items-center gap-1 transition-all"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Impersonate
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setCreditSelectedSchool(sch);
+                          setCreditAmount(100);
+                          setIsCreditModalOpen(true);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 text-zinc-300 text-xs font-bold flex items-center gap-1 transition-all"
+                      >
+                        <Coins className="w-3.5 h-3.5 text-amber-500" /> Allocate Credits
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteSchool(sch.id)}
+                        className="p-2 rounded-xl bg-red-950/20 border border-red-900/30 hover:bg-red-900/20 text-red-400 hover:text-red-300 transition-all text-xs font-bold"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stats & Credit balance */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-zinc-900/60">
+                    <div className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-2xl text-center">
+                      <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest block">Total Allocated Credits</span>
+                      <span className="text-base font-black text-white block mt-0.5">{sch.totalCredits}</span>
+                    </div>
+                    <div className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-2xl text-center">
+                      <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest block">Consumed Credits</span>
+                      <span className="text-base font-black text-teal-400 block mt-0.5">{sch.usedCredits}</span>
+                    </div>
+                    <div className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-2xl text-center">
+                      <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest block">Remaining Balance</span>
+                      <span className="text-base font-black text-amber-400 block mt-0.5">{sch.totalCredits - sch.usedCredits}</span>
+                    </div>
+                    <div className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-2xl flex flex-col items-center justify-center gap-1">
+                      <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-widest block">System Status</span>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="checkbox"
+                          checked={sch.active}
+                          onChange={() => handleToggleSchoolActive(sch.id)}
+                          className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 bg-zinc-900 border-zinc-800"
+                        />
+                        <span className={`text-[10px] font-extrabold uppercase ${sch.active ? 'text-green-400' : 'text-zinc-500'}`}>
+                          {sch.active ? 'Active' : 'Suspended'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1005,6 +1325,410 @@ export default function AdminConsole() {
         )}
 
       </main>
+
+      {/* ──── SUPER ADMIN MODAL PANELS ──── */}
+      <AnimatePresence>
+        {/* Scenario Creator / Editor Modal */}
+        {isScenarioModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsScenarioModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-3xl rounded-3xl overflow-hidden shadow-2xl p-6 my-8 space-y-6 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500 to-indigo-500" />
+              
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-extrabold text-white">
+                    {editingScenario ? 'Edit Scenario Matrix' : 'Create Immersive Scenario'}
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1">Configure MP4 video loops and map scoring metrics.</p>
+                </div>
+                <button 
+                  onClick={() => setIsScenarioModalOpen(false)}
+                  className="text-zinc-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveScenario} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Scenario Title</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. Bio-Genetics Lab"
+                      value={scenarioTitle}
+                      onChange={(e) => setScenarioTitle(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Target Cohort Age</label>
+                      <select 
+                        value={scenarioAgeGroup}
+                        onChange={(e) => setScenarioAgeGroup(e.target.value)}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                      >
+                        <option value="All">All Grades (8-12)</option>
+                        <option value="8-10">Middle School (8-10)</option>
+                        <option value="11-12">High School (11-12)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-zinc-500 font-bold uppercase block">Video URL (.mp4)</label>
+                      <input 
+                        type="text"
+                        required
+                        placeholder="e.g. /videos/assembly.mp4"
+                        value={scenarioVideoUrl}
+                        onChange={(e) => setScenarioVideoUrl(e.target.value)}
+                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Edit Questions */}
+                <div className="space-y-4 pt-4 border-t border-zinc-900">
+                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Video Overlay Questions</span>
+                  
+                  {scenarioQuestions.map((q, qIdx) => (
+                    <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-900 space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-purple-400 uppercase">Question #{qIdx + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[9px] text-zinc-500 font-bold">TRIGGER AT (SEC):</label>
+                          <input 
+                            type="number"
+                            required
+                            min="0"
+                            value={q.show_at_seconds || 5}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setScenarioQuestions(prev => prev.map((item, idx) => {
+                                if (idx === qIdx) return { ...item, show_at_seconds: val };
+                                return item;
+                              }));
+                            }}
+                            className="w-16 bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-zinc-500 font-bold uppercase">Question Prompt</label>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="e.g. The flight controls fail. What is your mechanical strategy?"
+                          value={q.question_text}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setScenarioQuestions(prev => prev.map((item, idx) => {
+                              if (idx === qIdx) return { ...item, question_text: val };
+                              return item;
+                            }));
+                          }}
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-zinc-250"
+                        />
+                      </div>
+
+                      {/* Edit 4 choices */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {q.options.map((opt: any, oIdx: number) => (
+                          <div key={opt.id || oIdx} className="p-3 rounded-xl bg-black/60 border border-zinc-900 space-y-2.5">
+                            <span className="text-[10px] font-extrabold text-teal-400 block">Choice Option {opt.option_letter}</span>
+                            <input 
+                              type="text"
+                              required
+                              placeholder="Choice text"
+                              value={opt.option_text}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setScenarioQuestions(prev => prev.map((item, idx) => {
+                                  if (idx === qIdx) {
+                                    const newOpts = [...item.options];
+                                    newOpts[oIdx] = { ...newOpts[oIdx], option_text: val };
+                                    return { ...item, options: newOpts };
+                                  }
+                                  return item;
+                                }));
+                              }}
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded py-1 px-2 text-[10px] focus:outline-none text-zinc-300"
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="space-y-1">
+                                <label className="text-[8px] text-zinc-600 block">DIMENSION</label>
+                                <select
+                                  value={opt.target_dimension}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setScenarioQuestions(prev => prev.map((item, idx) => {
+                                      if (idx === qIdx) {
+                                        const newOpts = [...item.options];
+                                        newOpts[oIdx] = { ...newOpts[oIdx], target_dimension: val };
+                                        return { ...item, options: newOpts };
+                                      }
+                                      return item;
+                                    }));
+                                  }}
+                                  className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-400"
+                                >
+                                  <option value="The Builder">Builder</option>
+                                  <option value="The Thinker">Thinker</option>
+                                  <option value="The Creator">Creator</option>
+                                  <option value="The Connector">Connector</option>
+                                  <option value="The Leader">Leader</option>
+                                  <option value="The Organizer">Organizer</option>
+                                </select>
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[8px] text-zinc-600 block">WEIGHT</label>
+                                <input 
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  max="1"
+                                  required
+                                  value={opt.intensity_weight}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setScenarioQuestions(prev => prev.map((item, idx) => {
+                                      if (idx === qIdx) {
+                                        const newOpts = [...item.options];
+                                        newOpts[oIdx] = { ...newOpts[oIdx], intensity_weight: val };
+                                        return { ...item, options: newOpts };
+                                      }
+                                      return item;
+                                    }));
+                                  }}
+                                  className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-350 text-center"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setIsScenarioModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
+                  >
+                    Save Scenario
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Enroll Partner School Modal */}
+        {isSchoolModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSchoolModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl p-6 space-y-6"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500 to-indigo-500" />
+              
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-extrabold text-white">Enroll Partner School</h3>
+                  <p className="text-xs text-zinc-500 mt-1">Register institutional cohort to create credentials.</p>
+                </div>
+                <button 
+                  onClick={() => setIsSchoolModalOpen(false)}
+                  className="text-zinc-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateSchool} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-500 font-bold uppercase block">School Name</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="e.g. Ryan International School"
+                    value={newSchoolName}
+                    onChange={(e) => setNewSchoolName(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none text-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Board</label>
+                    <select
+                      value={newSchoolBoard}
+                      onChange={(e) => setNewSchoolBoard(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none text-white"
+                    >
+                      <option value="CBSE">CBSE</option>
+                      <option value="ICSE">ICSE</option>
+                      <option value="State Board">State Board</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Location</label>
+                    <input 
+                      type="text"
+                      required
+                      placeholder="e.g. Pune, Maharashtra"
+                      value={newSchoolLocation}
+                      onChange={(e) => setNewSchoolLocation(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Contact Email</label>
+                    <input 
+                      type="email"
+                      required
+                      placeholder="e.g. info@ryan.edu"
+                      value={newSchoolContact}
+                      onChange={(e) => setNewSchoolContact(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none text-white"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Assessment Credits</label>
+                    <input 
+                      type="number"
+                      required
+                      min="1"
+                      value={newSchoolCredits}
+                      onChange={(e) => setNewSchoolCredits(Number(e.target.value))}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setIsSchoolModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all"
+                  >
+                    Enroll School
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Allocate Credits Modal */}
+        {isCreditModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCreditModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl p-6 space-y-6"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-amber-500 to-yellow-500" />
+              
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-extrabold text-white">Allocate Assessment Credits</h3>
+                  <p className="text-xs text-zinc-500 mt-1">School: <strong className="text-zinc-300">{creditSelectedSchool?.name}</strong></p>
+                </div>
+                <button 
+                  onClick={() => setIsCreditModalOpen(false)}
+                  className="text-zinc-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleAllocateCreditsSave} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-zinc-500 font-bold uppercase block">Add Credits Amount</label>
+                  <input 
+                    type="number"
+                    required
+                    min="1"
+                    value={creditAmount}
+                    onChange={(e) => setCreditAmount(Number(e.target.value))}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2.5 px-3 text-xs focus:outline-none text-zinc-300"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreditModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-extrabold text-xs shadow-[0_0_15px_rgba(245,158,11,0.3)] transition-all"
+                  >
+                    Add Credits
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
