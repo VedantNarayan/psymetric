@@ -8,7 +8,7 @@ import {
   Sparkles, CheckCircle2, ChevronRight, Play, ArrowRight,
   TrendingUp, Award, AwardIcon, GraduationCap, Compass,
   BookOpen, BrainCircuit, ShieldAlert, RotateCcw, AlertTriangle, 
-  HelpCircle, Clock, Check, Volume2, VolumeX, Loader2
+  HelpCircle, Clock, Check, Volume2, VolumeX, Loader2, Building
 } from 'lucide-react';
 
 interface Question {
@@ -548,174 +548,389 @@ export default function AssessmentWorkspace() {
 
   // ─── RENDER REPORT VIEW ───
   if (isCompleted) {
+    // Determine dominant personality traits for title
+    const sortedTraits = Object.entries(report?.holland_percentages || {})
+      .sort((a: any, b: any) => b[1] - a[1])
+      .map(entry => entry[0]);
+
+    const primaryTrait = sortedTraits[0] || 'The Thinker';
+    const secondaryTrait = sortedTraits[1] || 'The Creator';
+    const characterTitle = `${primaryTrait.replace('The ', '')}-${secondaryTrait.replace('The ', '')} Hybrid`;
+
+    // Radar chart dimensions
+    const cx = 150;
+    const cy = 150;
+    const maxRadius = 100;
+    
+    // Axes definition
+    const axes = [
+      { name: 'The Builder', color: '#ef4444' }, // Red
+      { name: 'The Thinker', color: '#3b82f6' }, // Blue
+      { name: 'The Creator', color: '#a855f7' }, // Purple
+      { name: 'The Connector', color: '#22c55e' }, // Green
+      { name: 'The Leader', color: '#f59e0b' }, // Amber
+      { name: 'The Organizer', color: '#14b8a6' } // Teal
+    ];
+
+    // Calculate radar polygon points
+    const points = axes.map((axis, i) => {
+      const percentage = (report?.holland_percentages?.[axis.name] || 50) / 100;
+      const r = percentage * maxRadius;
+      const angle = (i * 2 * Math.PI) / 6 - Math.PI / 2;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      return { x, y, name: axis.name, score: Math.round(percentage * 100) };
+    });
+
+    const polygonPointsString = points.map(p => `${p.x},${p.y}`).join(' ');
+
     return (
-      <div className="min-h-screen bg-[#050508] text-white py-12 px-4 sm:px-6 lg:px-8 mesh-gradient overflow-y-auto">
-        <div className="max-w-5xl mx-auto space-y-8">
+      <div className="min-h-screen bg-[#05050c] text-white py-8 px-4 sm:px-6 lg:px-8 mesh-gradient overflow-y-auto">
+        <div className="max-w-7xl mx-auto space-y-8">
           
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-6">
-            <div className="flex items-center gap-2">
-              <Compass className="w-8 h-8 text-teal-400" />
-              <h1 className="text-2xl font-bold tracking-wider">Psy<span className="text-teal-400">Metric</span> Dashboard</h1>
+          <header className="flex items-center justify-between border-b border-zinc-900 pb-6">
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
+              <img 
+                src="/psymetric-logo.png" 
+                alt="PsyMetric Logo" 
+                className="h-10 w-auto object-contain"
+              />
             </div>
             <div className="flex items-center gap-3">
               <button 
                 onClick={handleResetSession}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 text-xs font-semibold text-zinc-300 transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 text-xs font-semibold text-zinc-300 transition-all active:scale-95 shadow-[0_0_15px_rgba(255,255,255,0.02)]"
               >
                 <RotateCcw className="w-3.5 h-3.5" /> Re-Evaluate
               </button>
               <button 
                 onClick={handleLogout}
-                className="px-4 py-2 rounded-xl bg-red-900/10 border border-red-500/20 hover:bg-red-900/20 hover:border-red-500/40 text-xs font-semibold text-red-300 transition-all active:scale-95"
+                className="px-4 py-2 rounded-xl bg-red-950/20 border border-red-500/20 hover:bg-red-900/20 hover:border-red-500/40 text-xs font-semibold text-red-400 transition-all active:scale-95"
               >
                 Exit Portal
               </button>
             </div>
-          </div>
+          </header>
 
           {generatingReport ? (
             <div className="glassmorphism p-16 rounded-3xl text-center flex flex-col items-center justify-center gap-6 min-h-[500px]">
               <div className="relative w-20 h-20">
-                <div className="absolute inset-0 rounded-full border-4 border-purple-500/10 border-t-purple-500 spinner" />
+                <div className="absolute inset-0 rounded-full border-4 border-purple-500/10 border-t-purple-500 spinner animate-spin" />
                 <BrainCircuit className="absolute inset-0 m-auto w-8 h-8 text-teal-400 animate-pulse" />
               </div>
-              <div className="space-y-2">
-                <h2 className="text-xl font-bold tracking-wide text-white">Synthesizing Psychometric Profile</h2>
+              <div className="space-y-2 animate-pulse">
+                <h2 className="text-xl font-bold tracking-wide text-white">Synthesizing Quest Results</h2>
                 <p className="text-sm text-zinc-400 max-w-sm mx-auto">
-                  Gemini 1.5 Pro is compiling your adaptive response vectors as a Senior Educational Psychologist...
+                  Compiling 6D character attributes and generating psychologist feedback loops...
                 </p>
               </div>
             </div>
           ) : report ? (
-            <motion.div 
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-              className="grid grid-cols-1 lg:grid-cols-3 gap-8"
-            >
+            <div className="space-y-8">
               
-              {/* Left & Mid Columns (2/3 width) */}
-              <div className="lg:col-span-2 space-y-8">
+              {/* ──── HERO SECTION (CHARACTER CARD) ──── */}
+              <motion.div 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="glassmorphism p-6 rounded-3xl relative overflow-hidden border border-purple-500/10"
+              >
+                <div className="absolute top-0 right-0 w-80 h-full bg-gradient-to-l from-purple-500/5 to-transparent -z-10" />
                 
-                {/* Holland Codes Visualizer */}
-                <div className="glassmorphism p-8 rounded-3xl">
-                  <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-teal-400" /> Calculated Holland Spectrum (RIASEC)
-                  </h2>
-                  <div className="space-y-4">
-                    {Object.entries(report.holland_percentages).map(([dim, val]: any) => {
-                      const colors: Record<string, string> = {
-                        Realistic: 'bg-red-500',
-                        Investigative: 'bg-blue-500',
-                        Artistic: 'bg-purple-500',
-                        Social: 'bg-green-500',
-                        Enterprising: 'bg-amber-500',
-                        Conventional: 'bg-teal-500'
-                      };
-                      return (
-                        <div key={dim} className="space-y-1.5">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-semibold text-zinc-300">{dim}</span>
-                            <span className="text-zinc-400 font-mono">{val}%</span>
-                          </div>
-                          <div className="w-full h-3 bg-zinc-900 rounded-full overflow-hidden p-[1px] border border-zinc-800">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${val}%` }}
-                              transition={{ duration: 1, ease: 'easeOut' }}
-                              className={`h-full rounded-full ${colors[dim] || 'bg-zinc-600'} shadow-[0_0_10px_rgba(0,0,0,0.5)]`}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Psychologist Summary */}
-                <div className="glassmorphism p-8 rounded-3xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-teal-500/10 to-transparent -z-10" />
-                  <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                    <BookOpen className="w-5 h-5 text-teal-400" /> Educational Psychologist Diagnosis
-                  </h2>
-                  <div className="text-zinc-300 text-sm leading-relaxed space-y-4 whitespace-pre-line">
-                    {report.psychologist_summary}
-                  </div>
-                  {isCheatFlagged && (
-                    <div className="mt-6 flex items-start gap-2.5 p-3 rounded-xl bg-amber-900/10 border border-amber-500/20 text-amber-300 text-xs">
-                      <ShieldAlert className="w-4.5 h-4.5 text-amber-400 shrink-0" />
-                      <span>
-                        Note: Assessment logs triggered the data integrity engine. Response patterns showed anomalies, and assessment was dynamically extended to resolve confidence limits.
-                      </span>
+                <div className="flex flex-col md:flex-row items-center gap-6">
+                  {/* Glowing Avatar */}
+                  <div className="relative w-24 h-24 rounded-2xl bg-gradient-to-tr from-purple-600 to-teal-400 p-[2px] shadow-[0_0_20px_rgba(168,85,247,0.3)]">
+                    <div className="w-full h-full rounded-2xl bg-[#090915] flex items-center justify-center overflow-hidden">
+                      <Sparkles className="w-10 h-10 text-teal-300 animate-pulse" />
                     </div>
-                  )}
-                </div>
+                    <div className="absolute -bottom-2 -right-2 bg-purple-600 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-400">
+                      LVL 3
+                    </div>
+                  </div>
 
-              </div>
+                  {/* Character Details */}
+                  <div className="flex-1 text-center md:text-left space-y-2">
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-extrabold text-purple-400 tracking-widest uppercase">Student Profile</span>
+                      <h2 className="text-2xl font-black tracking-wide text-white">{profile?.full_name || 'Jane Doe'}</h2>
+                      <p className="text-sm text-teal-300 font-semibold flex items-center justify-center md:justify-start gap-1">
+                        <GraduationCap className="w-4 h-4" /> {characterTitle}
+                      </p>
+                    </div>
 
-              {/* Right Column (1/3 width) */}
-              <div className="space-y-8">
-                
-                {/* Operational Modes */}
-                <div className="glassmorphism p-8 rounded-3xl text-center">
-                  <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-6 text-left">
-                    Operational Modes
-                  </h2>
-                  <div className="grid grid-cols-3 gap-2">
-                    {Object.entries(report.operational_modes).map(([mode, val]: any) => {
-                      const title = mode.replace('_', ' ');
-                      return (
-                        <div key={mode} className="flex flex-col items-center gap-2 p-3 rounded-2xl bg-black/40 border border-zinc-900">
-                          <span className="text-lg font-bold text-teal-400 font-mono">{val}%</span>
-                          <span className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider text-center line-clamp-1">{title}</span>
-                        </div>
-                      );
-                    })}
+                    {/* XP Progress Bar */}
+                    <div className="space-y-1 max-w-md">
+                      <div className="flex justify-between text-[9px] font-bold text-zinc-500 uppercase">
+                        <span>Experience (XP)</span>
+                        <span>420 / 600 XP</span>
+                      </div>
+                      <div className="w-full h-1.5 bg-zinc-950 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-purple-500 to-teal-400" style={{ width: '70%' }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cohort Crest Badge */}
+                  <div className="p-4 rounded-2xl bg-zinc-950/50 border border-zinc-900 flex items-center gap-3">
+                    <Building className="w-8 h-8 text-zinc-600" />
+                    <div className="text-left text-xs">
+                      <span className="font-bold block text-white">{profile?.school_name || 'DAV Public School'}</span>
+                      <span className="text-zinc-500">Class {profile?.class || '10'}-{profile?.section || 'A'} {profile?.stream ? `• ${profile?.stream}` : ''}</span>
+                    </div>
                   </div>
                 </div>
+              </motion.div>
 
-                {/* Career Paths */}
-                <div className="space-y-4">
-                  <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">
-                    Recommended High-Growth Pathways
-                  </h2>
-                  {report.career_recommendations.map((career: any, index: number) => (
-                    <motion.div 
-                      key={career.title}
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="glassmorphism p-5 rounded-2xl border-l-4 border-l-purple-500 hover:border-l-teal-400 transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h3 className="font-bold text-white text-sm">{career.title}</h3>
-                          <span className="text-[10px] font-semibold text-purple-400">{career.field}</span>
-                        </div>
-                        <div className="flex items-center gap-1 bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
-                          Match: {career.suitability_score}%
-                        </div>
-                      </div>
-                      <p className="text-zinc-400 text-xs mb-3 line-clamp-2 leading-relaxed">{career.description}</p>
+              {/* ──── COLUMNS GRID ──── */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                {/* LEFT & MID COLUMNS (8/12 width) */}
+                <div className="lg:col-span-8 space-y-8">
+                  
+                  {/* Radar Constellation & Scatter Matrix */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    
+                    {/* Personality Constellation (Radar Chart) */}
+                    <div className="glassmorphism p-6 rounded-3xl flex flex-col justify-between items-center min-h-[350px]">
+                      <h3 className="w-full text-xs font-bold text-zinc-400 uppercase tracking-widest text-left mb-4 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-purple-400" /> Character Constellation
+                      </h3>
                       
-                      <div className="space-y-1.5 border-t border-zinc-900 pt-3 text-[10px]">
-                        <div className="flex items-start gap-1">
-                          <TrendingUp className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                          <span className="text-zinc-400"><strong className="text-zinc-300">Growth:</strong> {career.growth_rate}</span>
+                      <div className="relative w-64 h-64">
+                        <svg className="w-full h-full" viewBox="0 0 300 300">
+                          {/* Inner concentric hexagons */}
+                          {[0.2, 0.4, 0.6, 0.8, 1.0].map((scale, sIdx) => {
+                            const r = scale * maxRadius;
+                            const hexagonPoints = axes.map((_, i) => {
+                              const angle = (i * 2 * Math.PI) / 6 - Math.PI / 2;
+                              const x = cx + r * Math.cos(angle);
+                              const y = cy + r * Math.sin(angle);
+                              return `${x},${y}`;
+                            }).join(' ');
+                            
+                            return (
+                              <polygon
+                                key={sIdx}
+                                points={hexagonPoints}
+                                fill="none"
+                                stroke="rgba(255, 255, 255, 0.05)"
+                                strokeWidth="1"
+                              />
+                            );
+                          })}
+
+                          {/* Constellation Axis lines */}
+                          {axes.map((_, i) => {
+                            const angle = (i * 2 * Math.PI) / 6 - Math.PI / 2;
+                            const x = cx + maxRadius * Math.cos(angle);
+                            const y = cy + maxRadius * Math.sin(angle);
+                            return (
+                              <line
+                                key={i}
+                                x1={cx}
+                                y1={cy}
+                                x2={x}
+                                y2={y}
+                                stroke="rgba(255, 255, 255, 0.05)"
+                                strokeWidth="1.5"
+                              />
+                            );
+                          })}
+
+                          {/* Calculated glowing polygon */}
+                          <polygon
+                            points={polygonPointsString}
+                            fill="rgba(168, 85, 247, 0.15)"
+                            stroke="rgba(168, 85, 247, 0.6)"
+                            strokeWidth="2.5"
+                            className="drop-shadow-[0_0_10px_rgba(168,85,247,0.3)]"
+                          />
+
+                          {/* Vertex Nodes */}
+                          {points.map((p, i) => (
+                            <g key={i}>
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r="5"
+                                fill={axes[i].color}
+                                className="cursor-pointer"
+                              />
+                              <text
+                                x={cx + 1.25 * maxRadius * Math.cos((i * 2 * Math.PI) / 6 - Math.PI / 2)}
+                                y={cy + 1.2 * maxRadius * Math.sin((i * 2 * Math.PI) / 6 - Math.PI / 2) + 4}
+                                fill="#a1a1aa"
+                                fontSize="9"
+                                fontWeight="bold"
+                                textAnchor="middle"
+                              >
+                                {p.name.replace('The ', '')}
+                              </text>
+                            </g>
+                          ))}
+                        </svg>
+                      </div>
+                    </div>
+
+                    {/* Skill-Interest Matrix (Scatter Plot) */}
+                    <div className="glassmorphism p-6 rounded-3xl flex flex-col justify-between min-h-[350px]">
+                      <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4 flex items-center gap-1.5">
+                        <TrendingUp className="w-4 h-4 text-teal-400" /> Skill-Interest Matrix
+                      </h3>
+                      
+                      {/* Scatter Plot Visualizer */}
+                      <div className="relative w-full h-56 bg-black/40 border border-zinc-900 rounded-2xl overflow-hidden p-4">
+                        {/* Sweet Spot Quadrant Glow */}
+                        <div className="absolute top-0 right-0 w-1/2 h-1/2 bg-teal-500/5 border-l border-b border-zinc-800/80 rounded-bl-xl" />
+                        <div className="absolute top-2 right-2 text-[9px] font-bold text-teal-400 uppercase tracking-wider">
+                          🎯 Sweet Spot
                         </div>
-                        <div className="flex items-start gap-1">
-                          <GraduationCap className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                          <span className="text-zinc-400"><strong className="text-zinc-300">Education:</strong> {career.education_path}</span>
+                        <div className="absolute bottom-2 left-2 text-[8px] text-zinc-600 font-bold uppercase">
+                          Aptitude ➔
+                        </div>
+                        <div className="absolute top-2 left-2 text-[8px] text-zinc-600 font-bold uppercase origin-top-left rotate-90 translate-x-1">
+                          Interest ➔
+                        </div>
+
+                        {/* Plotted Career Dots */}
+                        <div className="absolute top-[20%] right-[25%] flex flex-col items-center group">
+                          <span className="w-3.5 h-3.5 rounded-full bg-teal-400 animate-pulse border-2 border-[#030303] shadow-[0_0_10px_rgba(20,184,166,0.8)]" />
+                          <span className="text-[8px] text-white font-bold bg-[#090915] px-1.5 py-0.5 rounded border border-zinc-800 mt-1">UAV Architect</span>
+                        </div>
+                        
+                        <div className="absolute top-[35%] right-[45%] flex flex-col items-center">
+                          <span className="w-3 h-3 rounded-full bg-purple-500 border-2 border-[#030303] shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+                          <span className="text-[8px] text-white font-bold bg-[#090915] px-1.5 py-0.5 rounded border border-zinc-800 mt-1">AI Systems</span>
+                        </div>
+
+                        <div className="absolute top-[60%] left-[30%] flex flex-col items-center">
+                          <span className="w-3 h-3 rounded-full bg-zinc-600 border border-[#030303]" />
+                          <span className="text-[8px] text-zinc-500 font-semibold mt-1">Robotics Control</span>
                         </div>
                       </div>
-                    </motion.div>
-                  ))}
+                    </div>
+
+                  </div>
+
+                  {/* Psychologist Feedback */}
+                  <div className="glassmorphism p-8 rounded-3xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-teal-500/10 to-transparent -z-10" />
+                    <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2 border-b border-zinc-900 pb-3">
+                      <BookOpen className="w-5 h-5 text-teal-400" /> Educational Psychologist Diagnosis
+                    </h3>
+                    <div className="text-zinc-300 text-xs leading-relaxed space-y-4 whitespace-pre-line">
+                      {report.psychologist_summary}
+                    </div>
+                  </div>
+
+                  {/* Career Skill Tree */}
+                  <div className="glassmorphism p-6 rounded-3xl">
+                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 flex items-center gap-1.5">
+                      <Compass className="w-4 h-4 text-purple-400" /> Career Skill Tree Explorer
+                    </h3>
+
+                    {/* Skill Tree Graphic representation */}
+                    <div className="relative min-h-[220px] bg-black/30 border border-zinc-900 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-around gap-6">
+                      
+                      {/* Central Character Node */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-teal-400 p-[2px] flex items-center justify-center shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                          <div className="w-full h-full rounded-full bg-[#05050c] flex items-center justify-center">
+                            <Sparkles className="w-6 h-6 text-purple-300" />
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-purple-300 font-extrabold uppercase mt-2 tracking-wider">Your Core</span>
+                      </div>
+
+                      {/* Line connector decoration */}
+                      <div className="hidden md:block absolute left-1/3 right-1/3 h-[2px] bg-gradient-to-r from-purple-500/30 to-teal-500/30 -z-10" />
+
+                      {/* Pathway Recommendations */}
+                      <div className="flex flex-col gap-4 w-full md:w-auto">
+                        {report.career_recommendations.map((c: any) => (
+                          <div 
+                            key={c.title}
+                            className="p-4 rounded-xl bg-zinc-950/80 border border-zinc-900 hover:border-teal-500/40 transition-all text-left flex justify-between items-center"
+                          >
+                            <div>
+                              <h5 className="text-xs font-black text-white">{c.title}</h5>
+                              <span className="text-[9px] text-zinc-500 font-semibold">{c.field}</span>
+                            </div>
+                            <span className="text-[10px] bg-teal-500/10 text-teal-400 px-2 py-0.5 rounded font-mono font-bold">
+                              {c.suitability_score}% Match
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* RIGHT SIDEBAR COLUMN (4/12 width) */}
+                <div className="lg:col-span-4 space-y-8">
+                  
+                  {/* Credits Widget */}
+                  <div className="glassmorphism p-6 rounded-3xl relative overflow-hidden text-center bg-gradient-to-b from-purple-950/20 to-transparent">
+                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest block mb-4">Assessment Credits</span>
+                    
+                    <div className="py-6 border-y border-dashed border-zinc-800 space-y-1">
+                      <span className="text-4xl font-black font-mono text-white tracking-tighter">1</span>
+                      <p className="text-[10px] text-zinc-500 font-semibold uppercase tracking-wider">Assessment Remaining</p>
+                    </div>
+
+                    <button 
+                      onClick={() => alert('Individual credit top-up integrations (Razorpay UPI/Card) will launch shortly in sandbox.')}
+                      className="w-full mt-4 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+                    >
+                      🎟️ Buy Additional Credits
+                    </button>
+                  </div>
+
+                  {/* Achievements wall */}
+                  <div className="glassmorphism p-6 rounded-3xl space-y-4">
+                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Award className="w-4 h-4 text-teal-400" /> Trophies Unlocked
+                    </h3>
+                    
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="flex flex-col items-center gap-1 p-2 rounded-xl bg-black/40 border border-zinc-900 text-center">
+                        <span className="text-xl">🏆</span>
+                        <span className="text-[8px] font-bold text-zinc-400 leading-tight">First evaluation</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1 p-2 rounded-xl bg-black/40 border border-zinc-900 text-center opacity-40">
+                        <span className="text-xl">🔥</span>
+                        <span className="text-[8px] font-bold text-zinc-500 leading-tight">5-Day streak</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1 p-2 rounded-xl bg-black/40 border border-zinc-900 text-center opacity-40">
+                        <span className="text-xl">💎</span>
+                        <span className="text-[8px] font-bold text-zinc-500 leading-tight">Elite Profile</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Score Timeline */}
+                  <div className="glassmorphism p-6 rounded-3xl space-y-4">
+                    <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-zinc-500" /> Evaluation Journey
+                    </h3>
+                    
+                    <div className="relative border-l border-zinc-800 pl-4 space-y-4 text-left">
+                      <div className="relative">
+                        <span className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-teal-400 border border-[#05050c] shadow-[0_0_8px_rgba(20,184,166,0.5)]" />
+                        <span className="text-[9px] font-bold text-teal-400 block uppercase">Active evaluation</span>
+                        <span className="text-xs font-bold text-white block">Cinematic Diagnostic</span>
+                        <span className="text-[10px] text-zinc-500 font-mono">Today</span>
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
 
               </div>
 
-            </motion.div>
+            </div>
           ) : (
             <div className="glassmorphism p-16 rounded-3xl text-center flex flex-col items-center justify-center gap-4">
               <AlertTriangle className="w-12 h-12 text-amber-500" />
@@ -950,7 +1165,6 @@ export default function AssessmentWorkspace() {
                             }`}
                             strokeWidth="2.5"
                             strokeDasharray="125.66"
-                            initial={{ strokeDashoffset: 0 }}
                             animate={{ strokeDashoffset: ((12 - timeLeft) / 12) * 125.66 }}
                             transition={{ duration: 1, ease: 'linear' }}
                             strokeLinecap="round"
