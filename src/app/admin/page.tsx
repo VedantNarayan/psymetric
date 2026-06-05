@@ -171,6 +171,19 @@ export default function AdminConsole() {
   const [scenarioAgeGroup, setScenarioAgeGroup] = useState('All');
   const [scenarioQuestions, setScenarioQuestions] = useState<any[]>([]);
 
+  // Question Set Modal states
+  const [isQuestionSetModalOpen, setIsQuestionSetModalOpen] = useState(false);
+  const [qSetSelectedScenarioId, setQSetSelectedScenarioId] = useState('');
+  const [qSetSetNumber, setQSetSetNumber] = useState(1);
+  const [qSetPrompt, setQSetPrompt] = useState('');
+  const [qSetTriggerSeconds, setQSetTriggerSeconds] = useState(5);
+  const [qSetOptions, setQSetOptions] = useState<any[]>([
+    { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+    { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+    { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+    { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+  ]);
+
   const [isSchoolModalOpen, setIsSchoolModalOpen] = useState(false);
   const [newSchoolName, setNewSchoolName] = useState('');
   const [newSchoolBoard, setNewSchoolBoard] = useState('CBSE');
@@ -223,6 +236,34 @@ export default function AdminConsole() {
     checkAuth();
   }, [router]);
 
+  // Synchronize question set form fields when scenario/set selection changes
+  useEffect(() => {
+    if (!qSetSelectedScenarioId) return;
+    const scen = scenarios.find(s => s.id === qSetSelectedScenarioId);
+    if (scen && scen.questions) {
+      const existingQ = scen.questions.find((q: any) => q.sequence_order === qSetSetNumber);
+      if (existingQ) {
+        setQSetPrompt(existingQ.question_text);
+        setQSetTriggerSeconds(existingQ.show_at_seconds || 5);
+        setQSetOptions(existingQ.options ? JSON.parse(JSON.stringify(existingQ.options)) : [
+          { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+          { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+          { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+          { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+        ]);
+        return;
+      }
+    }
+    setQSetPrompt('');
+    setQSetTriggerSeconds(5);
+    setQSetOptions([
+      { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+      { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+      { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+      { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+    ]);
+  }, [qSetSelectedScenarioId, qSetSetNumber, scenarios]);
+
   const handleAddSection = () => {
     if (!newSectionName.trim()) return;
     const sectionsToAdd = newSectionName
@@ -270,20 +311,7 @@ export default function AdminConsole() {
     setScenarioTitle('');
     setScenarioVideoUrl('');
     setScenarioAgeGroup('All');
-    setScenarioQuestions([
-      {
-        id: 'q_' + Math.random().toString(36).substring(2, 9),
-        sequence_order: 1,
-        question_text: '',
-        show_at_seconds: 5,
-        options: [
-          { id: 'opt_a_' + Math.random().toString(36).substring(2, 9), option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
-          { id: 'opt_b_' + Math.random().toString(36).substring(2, 9), option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
-          { id: 'opt_c_' + Math.random().toString(36).substring(2, 9), option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
-          { id: 'opt_d_' + Math.random().toString(36).substring(2, 9), option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
-        ]
-      }
-    ]);
+    setScenarioQuestions([]); // Initialize questions list as empty on creation
     setIsScenarioModalOpen(true);
   };
 
@@ -311,7 +339,7 @@ export default function AdminConsole() {
         video_url: scenarioVideoUrl,
         target_age_group: scenarioAgeGroup,
         is_active: true,
-        questions: scenarioQuestions
+        questions: [] // No questions initialised on creation
       };
       setScenarios(prev => [...prev, newScen]);
     }
@@ -322,6 +350,67 @@ export default function AdminConsole() {
     if (confirm('Are you sure you want to delete this scenario?')) {
       setScenarios(prev => prev.filter(s => s.id !== id));
     }
+  };
+
+  const handleCreateQuestionSetClick = () => {
+    if (scenarios.length === 0) {
+      alert('Please create at least one scenario first before creating question sets.');
+      return;
+    }
+    setQSetSelectedScenarioId(scenarios[0].id);
+    setQSetSetNumber(1);
+    setQSetPrompt('');
+    setQSetTriggerSeconds(5);
+    setQSetOptions([
+      { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
+      { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
+      { option_letter: 'C', option_text: '', target_dimension: 'The Leader', intensity_weight: 0.8 },
+      { option_letter: 'D', option_text: '', target_dimension: 'The Organizer', intensity_weight: 0.8 }
+    ]);
+    setIsQuestionSetModalOpen(true);
+  };
+
+  const handleSaveQuestionSet = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!qSetSelectedScenarioId || !qSetPrompt.trim()) return;
+
+    setScenarios(prev => prev.map(s => {
+      if (s.id === qSetSelectedScenarioId) {
+        const questionsList = s.questions ? [...s.questions] : [];
+        const existingQIdx = questionsList.findIndex((q: any) => q.sequence_order === qSetSetNumber);
+
+        // Generate options with IDs if they don't have them
+        const mappedOptions = qSetOptions.map(opt => ({
+          ...opt,
+          id: opt.id || 'opt_' + opt.option_letter.toLowerCase() + '_' + Math.random().toString(36).substring(2, 9)
+        }));
+
+        const questionData = {
+          id: questionsList[existingQIdx]?.id || 'q_' + Math.random().toString(36).substring(2, 9),
+          sequence_order: qSetSetNumber,
+          question_text: qSetPrompt,
+          show_at_seconds: qSetTriggerSeconds,
+          options: mappedOptions
+        };
+
+        if (existingQIdx >= 0) {
+          questionsList[existingQIdx] = questionData;
+        } else {
+          questionsList.push(questionData);
+        }
+
+        // Sort questions by sequence order
+        questionsList.sort((a: any, b: any) => a.sequence_order - b.sequence_order);
+
+        return {
+          ...s,
+          questions: questionsList
+        };
+      }
+      return s;
+    }));
+
+    setIsQuestionSetModalOpen(false);
   };
 
   const handleCreateSchool = (e: React.FormEvent) => {
@@ -1024,12 +1113,20 @@ export default function AdminConsole() {
                 <h1 className="text-2xl font-black tracking-tight text-white mb-1">Scenario Matrix Creator</h1>
                 <p className="text-zinc-400 text-xs">Manage MP4 loop assets and map dimension intensities</p>
               </div>
-              <button 
-                onClick={handleCreateScenarioClick}
-                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(168,85,247,0.25)] transition-all"
-              >
-                <Plus className="w-4 h-4" /> Create New Scenario
-              </button>
+              <div className="flex gap-3">
+                <button 
+                  onClick={handleCreateScenarioClick}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(168,85,247,0.25)] transition-all"
+                >
+                  <Plus className="w-4 h-4" /> Create New Scenario
+                </button>
+                <button 
+                  onClick={handleCreateQuestionSetClick}
+                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-[0_0_15px_rgba(20,184,166,0.25)] transition-all"
+                >
+                  <Plus className="w-4 h-4" /> Create Question Set
+                </button>
+              </div>
             </div>
 
             <div className="p-6 rounded-3xl bg-purple-950/10 border border-purple-500/20 text-xs text-purple-300">
@@ -1478,12 +1575,12 @@ export default function AdminConsole() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-3xl rounded-3xl overflow-hidden shadow-2xl p-6 my-8 space-y-6 max-h-[85vh] overflow-y-auto"
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl p-6 my-8 space-y-6 max-h-[85vh] overflow-y-auto"
             >
               <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500 to-indigo-500" />
               
               <div className="flex justify-between items-start">
-                <div>
+                <div className="text-left">
                   <h3 className="text-lg font-extrabold text-white">
                     {editingScenario ? 'Edit Scenario Matrix' : 'Create Immersive Scenario'}
                   </h3>
@@ -1498,9 +1595,9 @@ export default function AdminConsole() {
               </div>
 
               <form onSubmit={handleSaveScenario} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Scenario Title</label>
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block text-left">Scenario Title</label>
                     <input 
                       type="text"
                       required
@@ -1510,7 +1607,7 @@ export default function AdminConsole() {
                       className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3 text-left">
                     <div className="space-y-1">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase block">Target Cohort Age</label>
                       <select 
@@ -1537,132 +1634,6 @@ export default function AdminConsole() {
                   </div>
                 </div>
 
-                {/* Edit Questions */}
-                <div className="space-y-4 pt-4 border-t border-zinc-900">
-                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Video Overlay Questions</span>
-                  
-                  {scenarioQuestions.map((q, qIdx) => (
-                    <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900/50 border border-zinc-900 space-y-4">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-purple-400 uppercase">Question #{qIdx + 1}</span>
-                        <div className="flex items-center gap-2">
-                          <label className="text-[9px] text-zinc-500 font-bold">TRIGGER AT (SEC):</label>
-                          <input 
-                            type="number"
-                            required
-                            min="0"
-                            value={q.show_at_seconds || 5}
-                            onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setScenarioQuestions(prev => prev.map((item, idx) => {
-                                if (idx === qIdx) return { ...item, show_at_seconds: val };
-                                return item;
-                              }));
-                            }}
-                            className="w-16 bg-zinc-950 border border-zinc-800 rounded px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-500 focus:outline-none"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[9px] text-zinc-500 font-bold uppercase">Question Prompt</label>
-                        <input 
-                          type="text"
-                          required
-                          placeholder="e.g. The flight controls fail. What is your mechanical strategy?"
-                          value={q.question_text}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setScenarioQuestions(prev => prev.map((item, idx) => {
-                              if (idx === qIdx) return { ...item, question_text: val };
-                              return item;
-                            }));
-                          }}
-                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-zinc-250"
-                        />
-                      </div>
-
-                      {/* Edit 4 choices */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {q.options.map((opt: any, oIdx: number) => (
-                          <div key={opt.id || oIdx} className="p-3 rounded-xl bg-black/60 border border-zinc-900 space-y-2.5">
-                            <span className="text-[10px] font-extrabold text-teal-400 block">Choice Option {opt.option_letter}</span>
-                            <input 
-                              type="text"
-                              required
-                              placeholder="Choice text"
-                              value={opt.option_text}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setScenarioQuestions(prev => prev.map((item, idx) => {
-                                  if (idx === qIdx) {
-                                    const newOpts = [...item.options];
-                                    newOpts[oIdx] = { ...newOpts[oIdx], option_text: val };
-                                    return { ...item, options: newOpts };
-                                  }
-                                  return item;
-                                }));
-                              }}
-                              className="w-full bg-zinc-900 border border-zinc-800 rounded py-1 px-2 text-[10px] focus:outline-none text-zinc-300"
-                            />
-                            
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="text-[8px] text-zinc-600 block">DIMENSION</label>
-                                <select
-                                  value={opt.target_dimension}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setScenarioQuestions(prev => prev.map((item, idx) => {
-                                      if (idx === qIdx) {
-                                        const newOpts = [...item.options];
-                                        newOpts[oIdx] = { ...newOpts[oIdx], target_dimension: val };
-                                        return { ...item, options: newOpts };
-                                      }
-                                      return item;
-                                    }));
-                                  }}
-                                  className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-400"
-                                >
-                                  <option value="The Builder">Builder</option>
-                                  <option value="The Thinker">Thinker</option>
-                                  <option value="The Creator">Creator</option>
-                                  <option value="The Connector">Connector</option>
-                                  <option value="The Leader">Leader</option>
-                                  <option value="The Organizer">Organizer</option>
-                                </select>
-                              </div>
-                              <div className="space-y-1">
-                                <label className="text-[8px] text-zinc-600 block">WEIGHT</label>
-                                <input 
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  max="1"
-                                  required
-                                  value={opt.intensity_weight}
-                                  onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setScenarioQuestions(prev => prev.map((item, idx) => {
-                                      if (idx === qIdx) {
-                                        const newOpts = [...item.options];
-                                        newOpts[oIdx] = { ...newOpts[oIdx], intensity_weight: val };
-                                        return { ...item, options: newOpts };
-                                      }
-                                      return item;
-                                    }));
-                                  }}
-                                  className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-350 text-center"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
                 <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900">
                   <button
                     type="button"
@@ -1683,6 +1654,180 @@ export default function AdminConsole() {
           </div>
         )}
 
+        {/* Question Set Creator / Editor Modal */}
+        {isQuestionSetModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsQuestionSetModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl p-6 my-8 space-y-6 max-h-[85vh] overflow-y-auto"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-teal-500 to-indigo-500" />
+              
+              <div className="flex justify-between items-start">
+                <div className="text-left">
+                  <h3 className="text-lg font-extrabold text-white">Create/Update Question Set</h3>
+                  <p className="text-xs text-zinc-500 mt-1">Assign a question set to a specific cinematic scenario backdrop.</p>
+                </div>
+                <button 
+                  onClick={() => setIsQuestionSetModalOpen(false)}
+                  className="text-zinc-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveQuestionSet} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Select Scenario</label>
+                    <select
+                      value={qSetSelectedScenarioId}
+                      onChange={(e) => setQSetSelectedScenarioId(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                    >
+                      {scenarios.map(s => (
+                        <option key={s.id} value={s.id}>{s.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Assessment Set</label>
+                    <select
+                      value={qSetSetNumber}
+                      onChange={(e) => setQSetSetNumber(Number(e.target.value))}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                    >
+                      <option value={1}>Set 1 (Initial Year)</option>
+                      <option value={2}>Set 2 (Year 2 Tracking)</option>
+                      <option value={3}>Set 3 (Year 3 Tracking)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-zinc-500 font-bold uppercase block">Trigger time (sec)</label>
+                    <input 
+                      type="number"
+                      required
+                      min="0"
+                      value={qSetTriggerSeconds}
+                      onChange={(e) => setQSetTriggerSeconds(Number(e.target.value))}
+                      className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1 text-left">
+                  <label className="text-[10px] text-zinc-500 font-bold uppercase">Question Prompt</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="e.g. The flight controls fail. What is your mechanical strategy?"
+                    value={qSetPrompt}
+                    onChange={(e) => setQSetPrompt(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                  />
+                </div>
+
+                <div className="space-y-3 pt-3 border-t border-zinc-900">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block text-left">Choices & Dimension Weight Mappings</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {qSetOptions.map((opt: any, oIdx: number) => (
+                      <div key={oIdx} className="p-3.5 rounded-2xl bg-zinc-900/50 border border-zinc-900 space-y-2.5 text-left">
+                        <span className="text-[10px] font-extrabold text-teal-400 block">Choice Option {opt.option_letter}</span>
+                        <input 
+                          type="text"
+                          required
+                          placeholder="Choice text"
+                          value={opt.option_text}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setQSetOptions(prev => {
+                              const copy = [...prev];
+                              copy[oIdx] = { ...copy[oIdx], option_text: val };
+                              return copy;
+                            });
+                          }}
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded py-1 px-2 text-[10px] focus:outline-none text-zinc-300"
+                        />
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-650 block font-bold">DIMENSION</label>
+                            <select
+                              value={opt.target_dimension}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setQSetOptions(prev => {
+                                  const copy = [...prev];
+                                  copy[oIdx] = { ...copy[oIdx], target_dimension: val };
+                                  return copy;
+                                });
+                              }}
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-400"
+                            >
+                              <option value="The Builder">Builder</option>
+                              <option value="The Thinker">Thinker</option>
+                              <option value="The Creator">Creator</option>
+                              <option value="The Connector">Connector</option>
+                              <option value="The Leader">Leader</option>
+                              <option value="The Organizer">Organizer</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-650 block font-bold">WEIGHT</label>
+                            <input 
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="1"
+                              required
+                              value={opt.intensity_weight}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                setQSetOptions(prev => {
+                                  const copy = [...prev];
+                                  copy[oIdx] = { ...copy[oIdx], intensity_weight: val };
+                                  return copy;
+                                });
+                              }}
+                              className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 px-1.5 text-[9px] focus:outline-none text-zinc-350 text-center"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuestionSetModalOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-xs shadow-[0_0_15px_rgba(20,184,166,0.3)] transition-all"
+                  >
+                    Save Question Set
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+        
         {/* Enroll Partner School Modal */}
         {isSchoolModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
