@@ -496,7 +496,6 @@ export default function AdminConsole() {
           return;
         }
 
-        const isVedant = session.user.email === 'vedantnarayan13@gmail.com';
         let profile = null;
         try {
           const { data } = await supabase
@@ -509,31 +508,9 @@ export default function AdminConsole() {
           console.warn('Failed to retrieve profile:', err);
         }
 
-        if (isVedant || profile?.user_type === 'super_admin' || profile?.is_admin) {
+        if (profile?.user_type === 'super_admin' || profile?.is_admin) {
           setIsAdmin(true);
           setCurrentRole('super_admin');
-          
-          // Sync profile to database if needed
-          if (isVedant) {
-            if (!profile) {
-              await supabase
-                .from('profiles')
-                .insert({
-                  id: session.user.id,
-                  email: session.user.email,
-                  full_name: session.user.user_metadata?.full_name || 'Vedant Narayan',
-                  user_type: 'super_admin',
-                  is_admin: true,
-                  age_tier: 'College (18+)',
-                  institution_type: 'College'
-                });
-            } else if (profile.user_type !== 'super_admin' || !profile.is_admin) {
-              await supabase
-                .from('profiles')
-                .update({ user_type: 'super_admin', is_admin: true })
-                .eq('id', session.user.id);
-            }
-          }
         } else if (profile?.user_type === 'school_admin') {
           setIsAdmin(true);
           setCurrentRole('school_admin');

@@ -101,7 +101,7 @@ export default function AuthPage() {
           .eq('id', session.user.id)
           .single();
 
-        if (profile?.user_type === 'school_admin' || profile?.user_type === 'super_admin' || session.user.email === 'vedantnarayan13@gmail.com') {
+        if (profile?.user_type === 'school_admin' || profile?.user_type === 'super_admin') {
           router.push('/admin');
         } else {
           router.push('/assessment');
@@ -296,7 +296,7 @@ export default function AuthPage() {
 
         setSuccessMsg('Access granted. Entering...');
         setTimeout(() => {
-          if (profile?.user_type === 'school_admin' || profile?.user_type === 'super_admin' || profile?.is_admin || email === 'vedantnarayan13@gmail.com') {
+          if (profile?.user_type === 'school_admin' || profile?.user_type === 'super_admin' || profile?.is_admin) {
             router.push('/admin');
           } else {
             router.push('/assessment');
