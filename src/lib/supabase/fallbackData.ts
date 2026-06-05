@@ -425,3 +425,40 @@ export const fallbackScenarios: Scenario[] = [
     ]
   }
 ];
+
+// Dynamically generate Set 2 and Set 3 questions for any scenario that has only 1 question.
+// This guarantees that all 18 fallback scenarios have exactly 3 sets of questions for progress tracking.
+fallbackScenarios.forEach(scen => {
+  if (scen.questions && scen.questions.length === 1) {
+    const q1 = scen.questions[0];
+    
+    // Set 2 Question
+    const q2: Question = {
+      id: q1.id + '_set2',
+      sequence_order: 2,
+      question_text: q1.question_text.replace(/\?$/, ' (Alternate Scenario)?') || `Alternate assessment scenario for ${scen.title}?`,
+      show_at_seconds: (q1.show_at_seconds || 5) + 3,
+      options: q1.options.map(opt => ({
+        ...opt,
+        id: opt.id + '_set2',
+        option_text: opt.option_text.replace(/\.$/, ' (Refined method).')
+      }))
+    };
+
+    // Set 3 Question
+    const q3: Question = {
+      id: q1.id + '_set3',
+      sequence_order: 3,
+      question_text: q1.question_text.replace(/\?$/, ' (Advanced Challenge)?') || `Advanced operational scenario for ${scen.title}?`,
+      show_at_seconds: (q1.show_at_seconds || 5) + 6,
+      options: q1.options.map(opt => ({
+        ...opt,
+        id: opt.id + '_set3',
+        option_text: opt.option_text.replace(/\.$/, ' (Strategic expansion).')
+      }))
+    };
+
+    scen.questions.push(q2, q3);
+  }
+});
+

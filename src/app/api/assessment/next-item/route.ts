@@ -39,6 +39,60 @@ export async function POST(req: NextRequest) {
 
     // ─── STANDARD DATABASE CODE ───
     
+    // Fetch the session first (always needed)
+    const { data: session, error: sessionError } = await supabase
+      .from('assessment_sessions')
+      .select('*')
+      .eq('id', session_id)
+      .single();
+
+    if (sessionError || !session) {
+      console.error('Error fetching assessment session:', sessionError);
+      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+    }
+
+    // ─── ACTIVE SET NUMBER CALCULATION (YEARLY SPACING / FALLBACK) ───
+    const thetaVector = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
+    let set_number = thetaVector.set_number;
+
+    if (!set_number) {
+      // Fetch completed sessions for user to determine set spacing
+      const { data: pastSessions } = await supabase
+        .from('assessment_sessions')
+        .select('created_at, theta_vector')
+        .eq('user_id', session.user_id)
+        .eq('is_completed', true)
+        .order('created_at', { ascending: false });
+
+      const pastCount = pastSessions?.length || 0;
+
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+      const recentSets = (pastSessions || [])
+        .filter(s => new Date(s.created_at) >= oneYearAgo)
+        .map(s => s.theta_vector?.set_number)
+        .filter(Boolean);
+
+      const uniqueRecentSets = Array.from(new Set(recentSets));
+
+      if (!uniqueRecentSets.includes(1)) {
+        set_number = 1;
+      } else if (!uniqueRecentSets.includes(2)) {
+        set_number = 2;
+      } else if (!uniqueRecentSets.includes(3)) {
+        set_number = 3;
+      } else {
+        set_number = (pastCount % 3) + 1;
+      }
+
+      thetaVector.set_number = set_number;
+      await supabase
+        .from('assessment_sessions')
+        .update({ theta_vector: thetaVector })
+        .eq('id', session_id);
+    }
+
     // 1. Record Response & Update Profile Vector
     if (question_id) {
       const timeMs = Number(response_time_ms) || 0;
@@ -55,17 +109,6 @@ export async function POST(req: NextRequest) {
       if (responseError && responseError.code !== '23505') {
         console.error('Error inserting candidate response:', responseError);
         return NextResponse.json({ error: 'Failed to record response' }, { status: 500 });
-      }
-
-      const { data: session, error: sessionError } = await supabase
-        .from('assessment_sessions')
-        .select('*')
-        .eq('id', session_id)
-        .single();
-
-      if (sessionError || !session) {
-        console.error('Error fetching assessment session:', sessionError);
-        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
       }
 
       if (selected_option_id) {
@@ -94,18 +137,16 @@ export async function POST(req: NextRequest) {
           .map((s: string) => s.trim())
           .filter(Boolean);
 
-        const theta = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
-        
-        if (!theta.counts) {
-          theta.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+        if (!thetaVector.counts) {
+          thetaVector.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
         }
 
         let updated = false;
         for (const rawDim of dimensions) {
           const dimLetter = dimensionMap[rawDim];
           if (dimLetter) {
-            theta[dimLetter] = (theta[dimLetter] || 0) + option.intensity_weight;
-            theta.counts[dimLetter] = (theta.counts[dimLetter] || 0) + 1;
+            thetaVector[dimLetter] = (thetaVector[dimLetter] || 0) + option.intensity_weight;
+            thetaVector.counts[dimLetter] = (thetaVector.counts[dimLetter] || 0) + 1;
             updated = true;
           }
         }
@@ -113,7 +154,7 @@ export async function POST(req: NextRequest) {
         if (updated) {
           await supabase
             .from('assessment_sessions')
-            .update({ theta_vector: theta })
+            .update({ theta_vector: thetaVector })
             .eq('id', session_id);
         }
       } else {
@@ -160,20 +201,23 @@ export async function POST(req: NextRequest) {
 
     const answeredQuestionIds = new Set(responses.map(r => r.question_id));
 
-    // Map questions to scenarios
+    // Map questions to scenarios (filtering by set_number and ensuring scenario uniqueness)
     const scenarioQuestionStatus = scenarios.map(sc => {
       const qs = sc.questions || [];
-      const totalQs = qs.length;
-      const answeredQs = qs.filter(q => answeredQuestionIds.has(q.id));
-      const isCompleted = totalQs > 0 && answeredQs.length === totalQs;
-      const isInProgress = answeredQs.length > 0 && answeredQs.length < totalQs;
+      
+      // Select the active question for this set_number. If missing, fall back to the first.
+      let activeQ = qs.find(q => q.sequence_order === set_number);
+      if (!activeQ && qs.length > 0) {
+        activeQ = qs.sort((a: any, b: any) => a.sequence_order - b.sequence_order)[0];
+      }
+
+      const isCompleted = activeQ ? answeredQuestionIds.has(activeQ.id) : false;
       
       return {
         ...sc,
-        totalQs,
-        answeredQsCount: answeredQs.length,
+        activeQuestion: activeQ,
         isCompleted,
-        isInProgress
+        isInProgress: false // scenario has exactly 1 question per session, so it is never in-progress
       };
     });
 
@@ -265,23 +309,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    let nextScenario = scenarioQuestionStatus.find(s => s.isInProgress);
+    let nextScenario = null;
     let nextQuestion = null;
 
-    if (nextScenario) {
-      nextQuestion = nextScenario.questions
-        .sort((a: any, b: any) => a.sequence_order - b.sequence_order)
-        .find((q: any) => !answeredQuestionIds.has(q.id));
+    if (is_extended && completedScenariosCount >= 12) {
+      nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
     } else {
-      if (is_extended && completedScenariosCount >= 12) {
-        nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted && !s.isInProgress);
-      } else {
-        nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted && !s.isInProgress);
-      }
+      nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+    }
 
-      if (nextScenario) {
-        nextQuestion = nextScenario.questions.sort((a: any, b: any) => a.sequence_order - b.sequence_order)[0];
-      }
+    if (nextScenario && nextScenario.activeQuestion) {
+      nextQuestion = nextScenario.activeQuestion;
     }
 
     if (!nextScenario || !nextQuestion) {
@@ -355,13 +393,48 @@ function handleInMemoryFallback(
       is_cheat_flagged: false,
       cheat_reason: '',
       is_extended: false,
-      total_extended_scenarios: 0
+      total_extended_scenarios: 0,
+      created_at: new Date().toISOString()
     };
     inMemoryResponses[session_id] = [];
   }
 
   const session = inMemorySessions[session_id];
   const responses = inMemoryResponses[session_id];
+
+  const thetaVector = session.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
+  let set_number = thetaVector.set_number;
+
+  if (!set_number) {
+    // Determine active set number based on past completed sessions for this mock user
+    const pastSessions = Object.values(inMemorySessions).filter(
+      (s: any) => s.user_id === session.user_id && s.is_completed
+    );
+    const pastCount = pastSessions.length;
+
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    const recentSets = pastSessions
+      .filter((s: any) => !s.created_at || new Date(s.created_at) >= oneYearAgo)
+      .map((s: any) => s.theta_vector?.set_number)
+      .filter(Boolean);
+
+    const uniqueRecentSets = Array.from(new Set(recentSets));
+
+    if (!uniqueRecentSets.includes(1)) {
+      set_number = 1;
+    } else if (!uniqueRecentSets.includes(2)) {
+      set_number = 2;
+    } else if (!uniqueRecentSets.includes(3)) {
+      set_number = 3;
+    } else {
+      set_number = (pastCount % 3) + 1;
+    }
+
+    thetaVector.set_number = set_number;
+    session.theta_vector = thetaVector;
+  }
 
   // 1. Process Response
   if (question_id) {
@@ -426,19 +499,23 @@ function handleInMemoryFallback(
   // 2. Compute completed scenarios count
   const answeredQuestionIds = new Set(responses.map(r => r.question_id));
 
+  // Map questions to scenarios (filtering by set_number and ensuring scenario uniqueness)
   const scenarioQuestionStatus = fallbackScenarios.map(sc => {
     const qs = sc.questions || [];
-    const totalQs = qs.length;
-    const answeredQs = qs.filter(q => answeredQuestionIds.has(q.id));
-    const isCompleted = totalQs > 0 && answeredQs.length === totalQs;
-    const isInProgress = answeredQs.length > 0 && answeredQs.length < totalQs;
+    
+    // Select the active question for this set_number. If missing, fall back to the first.
+    let activeQ = qs.find(q => q.sequence_order === set_number);
+    if (!activeQ && qs.length > 0) {
+      activeQ = qs.sort((a, b) => a.sequence_order - b.sequence_order)[0];
+    }
+
+    const isCompleted = activeQ ? answeredQuestionIds.has(activeQ.id) : false;
     
     return {
       ...sc,
-      totalQs,
-      answeredQsCount: answeredQs.length,
+      activeQuestion: activeQ,
       isCompleted,
-      isInProgress
+      isInProgress: false // scenario has exactly 1 question per session, so it is never in-progress
     };
   });
 
@@ -501,23 +578,17 @@ function handleInMemoryFallback(
   }
 
   // 4. Select Next Question
-  let nextScenario = scenarioQuestionStatus.find(s => s.isInProgress);
+  let nextScenario = null;
   let nextQuestion = null;
 
-  if (nextScenario) {
-    nextQuestion = nextScenario.questions
-      .sort((a, b) => a.sequence_order - b.sequence_order)
-      .find(q => !answeredQuestionIds.has(q.id));
+  if (session.is_extended && completedScenariosCount >= 12) {
+    nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
   } else {
-    if (session.is_extended && completedScenariosCount >= 12) {
-      nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted && !s.isInProgress);
-    } else {
-      nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted && !s.isInProgress);
-    }
+    nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+  }
 
-    if (nextScenario) {
-      nextQuestion = nextScenario.questions.sort((a, b) => a.sequence_order - b.sequence_order)[0];
-    }
+  if (nextScenario && nextScenario.activeQuestion) {
+    nextQuestion = nextScenario.activeQuestion;
   }
 
   if (!nextScenario || !nextQuestion) {

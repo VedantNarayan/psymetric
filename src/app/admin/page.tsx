@@ -22,6 +22,75 @@ const INITIAL_STUDENTS = [
   { id: 's6', name: 'Siddharth Rao', class: '12', section: 'Humanities-A', stream: 'Humanities', trait: 'The Builder', score: 90, status: 'Completed', codesRemaining: 0, tags: ['High Creative'] }
 ];
 
+const INITIAL_USERS = [
+  { 
+    id: 'u1', 
+    name: 'Vedant Narayan', 
+    email: 'vedant@psy.com', 
+    role: 'Student',
+    schoolName: 'DAV Public School',
+    class: '10', 
+    section: 'A',
+    sessions: [
+      {
+        id: 'sess_1',
+        createdAt: '2025-01-15T10:00:00Z',
+        setNumber: 1,
+        isCompleted: true,
+        thetaVector: { R: 2.7, I: 4.8, A: 1.2, S: 0.8, E: 3.2, C: 0.5 },
+        responses: [
+          { scenarioTitle: 'Autonomous Drone Assembly Lab', questionText: 'The autonomous drone motor calibration fails. How do you address the hardware malfunction?', selectedLetter: 'A', selectedText: 'Manually disassemble the carbon-fiber shell and rewire the brushless motor leads directly.', timeMs: 45000 },
+          { scenarioTitle: 'Bio-Genetics Computing Center', questionText: 'You isolate a novel gene sequence expressing an unknown protein. What is your scientific strategy?', selectedLetter: 'A', selectedText: 'Conduct a statistical analysis of gene transcription rates using multi-variate statistical models.', timeMs: 32000 },
+          { scenarioTitle: 'Mixed-Reality Creative Loft', questionText: 'Your spatial Virtual Reality sculpture lacks emotional impact and depth. How do you redesign it?', selectedLetter: 'B', selectedText: 'Consult cognitive response studies to map which shapes cause calming neurological sensations.', timeMs: 28000 }
+        ]
+      },
+      {
+        id: 'sess_2',
+        createdAt: '2026-05-20T11:30:00Z',
+        setNumber: 2,
+        isCompleted: true,
+        thetaVector: { R: 1.8, I: 5.6, A: 2.0, S: 0.9, E: 2.4, C: 1.0 },
+        responses: [
+          { scenarioTitle: 'Autonomous Drone Assembly Lab', questionText: 'The autonomous drone motor calibration fails (Alternate Scenario)?', selectedLetter: 'B', selectedText: 'Run an algorithmic frequency sweep to plot electromagnetic interference patterns on a chart (Refined method).', timeMs: 25000 },
+          { scenarioTitle: 'Bio-Genetics Computing Center', questionText: 'You isolate a novel gene sequence expressing an unknown protein (Alternate Scenario)?', selectedLetter: 'A', selectedText: 'Conduct a statistical analysis of gene transcription rates using multi-variate statistical models (Refined method).', timeMs: 18000 }
+        ]
+      }
+    ]
+  },
+  { 
+    id: 'u2', 
+    name: 'Priya Sharma', 
+    email: 'priya@example.com', 
+    role: 'Student',
+    schoolName: 'Delhi Public School',
+    class: '12', 
+    section: 'Science-A',
+    sessions: [
+      {
+        id: 'sess_3',
+        createdAt: '2025-09-10T14:20:00Z',
+        setNumber: 1,
+        isCompleted: true,
+        thetaVector: { R: 0.8, I: 1.2, A: 5.4, S: 3.5, E: 1.0, C: 0.8 },
+        responses: [
+          { scenarioTitle: 'Mixed-Reality Creative Loft', questionText: 'Your spatial Virtual Reality sculpture lacks emotional impact and depth. How do you redesign it?', selectedLetter: 'A', selectedText: 'Sculpt abstract fluid textures and project glowing neon volumetric lighting to evoke emotional discomfort.', timeMs: 51000 },
+          { scenarioTitle: 'Collaborative Study Incubator', questionText: 'Two junior team members are locked in a heated disagreement over coding responsibilities. How do you arbitrate?', selectedLetter: 'A', selectedText: 'Facilitate a structured active-listening session to let both parties voice feelings and repair collaboration.', timeMs: 34000 }
+        ]
+      }
+    ]
+  },
+  { 
+    id: 'u3', 
+    name: 'Rahul Gupta', 
+    email: 'rahul@gmail.com', 
+    role: 'Student',
+    schoolName: 'Jamnabai Narsee School',
+    class: '11', 
+    section: 'Commerce-B',
+    sessions: []
+  }
+];
+
 export default function AdminConsole() {
   const router = useRouter();
   
@@ -31,7 +100,7 @@ export default function AdminConsole() {
   const [currentRole, setCurrentRole] = useState<'super_admin' | 'school_admin'>('school_admin');
   
   // Tab Navigation
-  const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings' | 'schools'>('mission_control');
+  const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings' | 'schools' | 'users'>('mission_control');
 
   // School Specific Info
   const [schoolLogo, setSchoolLogo] = useState<string>('/psymetric-icon.png');
@@ -87,6 +156,11 @@ export default function AdminConsole() {
     { id: 'sch2', name: 'Delhi Public School', board: 'CBSE', location: 'New Delhi, Delhi', contact: 'admin@dps.edu', active: true, totalCredits: 300, usedCredits: 98 },
     { id: 'sch3', name: 'Jamnabai Narsee School', board: 'ICSE', location: 'Mumbai, Maharashtra', contact: 'contact@jamnabai.edu', active: false, totalCredits: 100, usedCredits: 100 }
   ]);
+
+  // Super Admin: Users List state
+  const [usersList, setUsersList] = useState<any[]>(INITIAL_USERS);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
 
   // Modals & Forms states
   const [isScenarioModalOpen, setIsScenarioModalOpen] = useState(false);
@@ -493,6 +567,14 @@ export default function AdminConsole() {
                   }`}
                 >
                   <Building className="w-4 h-4" /> Enrolled Schools
+                </button>
+                <button
+                  onClick={() => setActiveTab('users')}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold transition-all ${
+                    activeTab === 'users' ? 'bg-purple-600/10 border border-purple-500/20 text-purple-400' : 'text-zinc-400 hover:bg-zinc-900'
+                  }`}
+                >
+                  <Users className="w-4 h-4" /> User Directory
                 </button>
                 <button
                   onClick={() => { setCurrentRole('school_admin'); setActiveTab('mission_control'); }}
@@ -1113,6 +1195,59 @@ export default function AdminConsole() {
           </div>
         )}
 
+        {/* TAB 7: USER DIRECTORY (SUPER ADMIN AUDIT VIEW) */}
+        {activeTab === 'users' && (
+          <div className="space-y-8 animate-fadeIn">
+            <div>
+              <h1 className="text-2xl font-black tracking-tight text-white mb-1">User Management & Audit Directory</h1>
+              <p className="text-zinc-400 text-xs">Track user progress, view taken scenarios, question sets, timestamps, and answer logs</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6">
+              {usersList.map((user) => (
+                <div key={user.id} className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-4 text-left relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[9px] font-bold text-purple-400 uppercase tracking-wider">
+                          Role: {user.role}
+                        </span>
+                        <span className="text-zinc-500 text-[10px]">ID: {user.id}</span>
+                      </div>
+                      <h4 className="text-base font-extrabold text-white">{user.name}</h4>
+                      <p className="text-xs text-zinc-400">{user.email} • {user.schoolName} (Class {user.class}-{user.section})</p>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        setSelectedUser(user);
+                        setIsUserModalOpen(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold flex items-center gap-1.5 transition-all self-end sm:self-start shadow-[0_0_15px_rgba(168,85,247,0.2)]"
+                    >
+                      <FileText className="w-3.5 h-3.5" /> View Audit History
+                    </button>
+                  </div>
+
+                  <div className="flex gap-6 pt-4 border-t border-zinc-900/60 text-xs text-zinc-400">
+                    <div>
+                      Total Assessments: <strong className="text-white font-mono">{user.sessions?.length || 0}</strong>
+                    </div>
+                    <div>
+                      Last Active: <strong className="text-white font-mono">
+                        {user.sessions && user.sessions.length > 0 
+                          ? new Date(user.sessions[user.sessions.length - 1].createdAt).toLocaleDateString()
+                          : 'Never'
+                        }
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* TAB 5: SCHOOL PROFILE CONFIGURATION */}
         {activeTab === 'school_settings' && (
           <div className="space-y-8">
@@ -1725,6 +1860,109 @@ export default function AdminConsole() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* User Audit History Details Modal */}
+        {isUserModalOpen && selectedUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsUserModalOpen(false)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-4xl rounded-3xl overflow-hidden shadow-2xl p-6 my-8 space-y-6 max-h-[85vh] overflow-y-auto text-left"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-purple-500 to-indigo-500" />
+              
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-extrabold text-white">Assessment & Answer Audit Trail</h3>
+                  <p className="text-xs text-zinc-500 mt-1">User: <strong className="text-zinc-300">{selectedUser.name}</strong> • {selectedUser.email}</p>
+                </div>
+                <button 
+                  onClick={() => setIsUserModalOpen(false)}
+                  className="text-zinc-500 hover:text-white text-xs font-bold p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {selectedUser.sessions && selectedUser.sessions.length > 0 ? (
+                  selectedUser.sessions.map((sess: any, sIdx: number) => (
+                    <div key={sess.id || sIdx} className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-zinc-800 pb-3 gap-2">
+                        <div>
+                          <span className="px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[9px] font-bold text-teal-400 uppercase tracking-wider">
+                            Assessment Set #{sess.setNumber}
+                          </span>
+                          <span className="text-[10px] text-zinc-500 ml-2">Session ID: {sess.id}</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-400 font-mono">
+                          Completed: {new Date(sess.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {/* Score Vector */}
+                      <div className="bg-black/30 p-3 rounded-xl border border-zinc-900/60">
+                        <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest block mb-2">Calculated Dimension Strengths</span>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                          {Object.entries(sess.thetaVector || {}).map(([dim, val]: any) => (
+                            <div key={dim} className="p-2 bg-zinc-950/40 rounded border border-zinc-900 text-xs">
+                              <span className="text-[9px] text-zinc-500 block uppercase font-bold">{dim}</span>
+                              <strong className="text-white font-mono text-xs">{val.toFixed(1)}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Question Response List */}
+                      <div className="space-y-3">
+                        <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest block">Detailed Responses</span>
+                        {sess.responses && sess.responses.length > 0 ? (
+                          sess.responses.map((resp: any, rIdx: number) => (
+                            <div key={rIdx} className="p-3 bg-black/20 border border-zinc-900/60 rounded-xl space-y-1.5 text-xs text-left">
+                              <div className="flex justify-between items-center text-[10px] text-zinc-500 font-semibold">
+                                <span>Scenario: <strong className="text-zinc-300">{resp.scenarioTitle}</strong></span>
+                                <span>Time: {((resp.timeMs || 0) / 1000).toFixed(1)}s</span>
+                              </div>
+                              <p className="text-zinc-300 font-medium font-bold">Q: {resp.questionText}</p>
+                              <div className="p-2.5 rounded-lg bg-purple-950/10 border border-purple-500/10">
+                                <span className="font-extrabold text-[10px] text-purple-400 block mb-0.5">Selected Option {resp.selectedLetter}</span>
+                                <p className="text-zinc-400 text-[10px] leading-relaxed">{resp.selectedText}</p>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-xs text-zinc-650 italic">No responses logged for this session.</p>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-8 rounded-2xl bg-zinc-900/20 border border-zinc-900 text-center text-zinc-500 text-xs">
+                    This user has not completed any assessments yet.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-zinc-900">
+                <button
+                  onClick={() => setIsUserModalOpen(false)}
+                  className="px-5 py-2 rounded-xl bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                >
+                  Close Audit
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
