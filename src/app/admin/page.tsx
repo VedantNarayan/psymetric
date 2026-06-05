@@ -91,6 +91,36 @@ const INITIAL_USERS = [
   }
 ];
 
+const INITIAL_CLASSES = {
+  '8': ['A', 'B'],
+  '9': ['A', 'B'],
+  '10': ['A', 'B', 'C'],
+  '11': ['Science-A', 'Commerce-A'],
+  '12': ['Science-A', 'Commerce-A']
+};
+
+const INITIAL_TEACHERS = [
+  { email: 'teacher1@dav.edu', classes: ['10-A', '9-A'] },
+  { email: 'teacher2@dav.edu', classes: ['12-Science-A'] }
+];
+
+const INITIAL_SCHOOLS = [
+  { id: 'sch1', name: 'DAV Public School', board: 'CBSE', location: 'Bengaluru, Karnataka', contact: 'principal@dav.edu', active: true, totalCredits: 500, usedCredits: 180 },
+  { id: 'sch2', name: 'Delhi Public School', board: 'CBSE', location: 'New Delhi, Delhi', contact: 'admin@dps.edu', active: true, totalCredits: 300, usedCredits: 98 },
+  { id: 'sch3', name: 'Jamnabai Narsee School', board: 'ICSE', location: 'Mumbai, Maharashtra', contact: 'contact@jamnabai.edu', active: false, totalCredits: 100, usedCredits: 100 }
+];
+
+// Helper to generate RFC4122 v4 UUIDs
+const generateUUID = () => {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
 export default function AdminConsole() {
   const router = useRouter();
   
@@ -98,6 +128,9 @@ export default function AdminConsole() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentRole, setCurrentRole] = useState<'super_admin' | 'school_admin'>('school_admin');
+
+  // Active School ID state for database operations
+  const [activeSchoolId, setActiveSchoolId] = useState<string>('sch1');
   
   // Tab Navigation
   const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings' | 'schools' | 'users'>('mission_control');
@@ -109,13 +142,7 @@ export default function AdminConsole() {
   const [schoolName, setSchoolName] = useState('DAV Public School');
 
   // Academic Structure state
-  const [academicClasses, setAcademicClasses] = useState<Record<string, string[]>>({
-    '8': ['A', 'B'],
-    '9': ['A', 'B'],
-    '10': ['A', 'B', 'C'],
-    '11': ['Science-A', 'Commerce-A'],
-    '12': ['Science-A', 'Commerce-A']
-  });
+  const [academicClasses, setAcademicClasses] = useState<Record<string, string[]>>({});
   const [newSectionClass, setNewSectionClass] = useState('10');
   const [newSectionName, setNewSectionName] = useState('');
 
@@ -134,10 +161,7 @@ export default function AdminConsole() {
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
 
   // Teacher delegation states
-  const [teachers, setTeachers] = useState<any[]>([
-    { email: 'teacher1@dav.edu', classes: ['10-A', '9-A'] },
-    { email: 'teacher2@dav.edu', classes: ['12-Science-A'] }
-  ]);
+  const [teachers, setTeachers] = useState<any[]>([]);
   const [newTeacherEmail, setNewTeacherEmail] = useState('');
   const [newTeacherClasses, setNewTeacherClasses] = useState<string[]>([]);
 
@@ -151,11 +175,7 @@ export default function AdminConsole() {
   });
 
   // Super Admin: Enrolled Schools state
-  const [schoolsList, setSchoolsList] = useState<any[]>([
-    { id: 'sch1', name: 'DAV Public School', board: 'CBSE', location: 'Bengaluru, Karnataka', contact: 'principal@dav.edu', active: true, totalCredits: 500, usedCredits: 180 },
-    { id: 'sch2', name: 'Delhi Public School', board: 'CBSE', location: 'New Delhi, Delhi', contact: 'admin@dps.edu', active: true, totalCredits: 300, usedCredits: 98 },
-    { id: 'sch3', name: 'Jamnabai Narsee School', board: 'ICSE', location: 'Mumbai, Maharashtra', contact: 'contact@jamnabai.edu', active: false, totalCredits: 100, usedCredits: 100 }
-  ]);
+  const [schoolsList, setSchoolsList] = useState<any[]>([]);
 
   // Super Admin: Users List state
   const [usersList, setUsersList] = useState<any[]>(INITIAL_USERS);
@@ -289,7 +309,7 @@ export default function AdminConsole() {
   const [creditAmount, setCreditAmount] = useState(100);
 
   // Question editing scenario list
-  const [scenarios, setScenarios] = useState<any[]>(fallbackScenarios);
+  const [scenarios, setScenarios] = useState<any[]>([]);
 
   // Scenario matrix manager state
   const [scenActiveView, setScenActiveView] = useState<'grid' | 'matrix' | 'analytics' | 'schema' | 'simulator'>('grid');
@@ -364,16 +384,121 @@ export default function AdminConsole() {
     setIsQuestionSetModalOpen(true);
   };
 
+  // Helper to sync scenario questions and options to Supabase
+  const syncScenarioToSupabase = async (scenId: string, updatedList?: any[]) => {
+    const list = updatedList || scenarios;
+    const scen = list.find(s => s.id === scenId);
+    if (!scen) return;
+
+    try {
+      // 1. Upsert Scenario
+      const { error: scenError } = await supabase
+        .from('scenarios')
+        .upsert({
+          id: scen.id,
+          title: scen.title,
+          video_url: scen.video_url,
+          target_age_group: scen.target_age_group || 'All',
+          status: scen.status || 'Published',
+          expected_time: scen.expected_time || 60,
+          focus_category: scen.focus_category || 'STEM',
+          is_active: scen.is_active !== false
+        });
+
+      if (scenError) throw scenError;
+
+      // 2. Delete existing questions that are no longer in this scenario
+      const currentQIds = (scen.questions || []).map((q: any) => q.id).filter((id: string) => !id.startsWith('temp_') && !id.startsWith('q_'));
+      if (currentQIds.length > 0) {
+        await supabase
+          .from('questions')
+          .delete()
+          .eq('scenario_id', scenId)
+          .not('id', 'in', `(${currentQIds.join(',')})`);
+      } else {
+        await supabase
+          .from('questions')
+          .delete()
+          .eq('scenario_id', scenId);
+      }
+
+      // 3. Upsert questions and their options
+      for (const q of (scen.questions || [])) {
+        const isNewQ = !q.id || q.id.startsWith('temp_') || q.id.startsWith('q_') || q.id.length < 10;
+        const qId = isNewQ ? generateUUID() : q.id;
+
+        const { error: qError } = await supabase
+          .from('questions')
+          .upsert({
+            id: qId,
+            scenario_id: scenId,
+            sequence_order: q.sequence_order,
+            question_text: q.question_text,
+            show_at_seconds: q.show_at_seconds || 0
+          });
+
+        if (qError) throw qError;
+
+        // Upsert options for this question
+        for (const o of (q.options || [])) {
+          const isNewO = !o.id || o.id.startsWith('temp_') || o.id.startsWith('opt_') || o.id.length < 10;
+          const oId = isNewO ? generateUUID() : o.id;
+
+          const { error: oError } = await supabase
+            .from('options')
+            .upsert({
+              id: oId,
+              question_id: qId,
+              option_letter: o.option_letter,
+              option_text: o.option_text,
+              target_dimension: o.target_dimension,
+              intensity_weight: o.intensity_weight
+            });
+
+          if (oError) throw oError;
+        }
+      }
+    } catch (err) {
+      console.error('Error syncing scenario to Supabase:', err);
+    }
+  };
+
+  // Save school name/board/logo to Supabase when changed
   useEffect(() => {
-    // Check authentication
-    const checkAuth = async () => {
+    const saveSchoolSettings = async () => {
+      if (supabase && typeof window !== 'undefined') {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && activeSchoolId && activeSchoolId !== 'sch1') {
+          try {
+            await supabase
+              .from('schools')
+              .update({ name: schoolName, board: schoolBoard, logo_url: schoolLogo })
+              .eq('id', activeSchoolId);
+          } catch (e) {
+            console.error('Error updating school settings in Supabase:', e);
+          }
+        }
+      }
+    };
+    saveSchoolSettings();
+  }, [schoolName, schoolBoard, schoolLogo, activeSchoolId]);
+
+  useEffect(() => {
+    // Check authentication and load Supabase data
+    const checkAuthAndLoad = async () => {
       setLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
         
-        // Sandbox mock bypass check
+        // Sandbox bypass check (local dev / testing without session)
         if (!session) {
-          setIsAdmin(true); // Allow sandbox bypass for viewing
+          setIsAdmin(true);
+          setCurrentRole('super_admin');
+          // Offline fallback
+          setScenarios(fallbackScenarios);
+          setSchoolsList(INITIAL_SCHOOLS);
+          setTeachers(INITIAL_TEACHERS);
+          setAcademicClasses(INITIAL_CLASSES);
           setLoading(false);
           return;
         }
@@ -392,14 +517,143 @@ export default function AdminConsole() {
           setCurrentRole('school_admin');
         } else {
           router.push('/assessment');
+          return;
         }
+
+        // Save active school ID
+        if (profile?.school_id) {
+          setActiveSchoolId(profile.school_id);
+          const { data: school } = await supabase
+            .from('schools')
+            .select('*')
+            .eq('id', profile.school_id)
+            .single();
+          if (school) {
+            setSchoolName(school.name);
+            setSchoolBoard(school.board);
+            if (school.logo_url) {
+              setSchoolLogo(school.logo_url);
+            }
+          }
+        }
+
+        // Load data from Supabase
+        // 1. Fetch Scenarios
+        const { data: scenData, error: scenError } = await supabase
+          .from('scenarios')
+          .select('*, questions(*, options(*))')
+          .order('created_at', { ascending: true });
+
+        if (scenError) {
+          console.warn('Scenarios fetch error:', scenError);
+          setScenarios(fallbackScenarios);
+        } else if (scenData && scenData.length > 0) {
+          const mappedScenarios = scenData.map((s: any) => ({
+            id: s.id,
+            title: s.title,
+            video_url: s.video_url,
+            target_age_group: s.target_age_group,
+            is_active: s.is_active,
+            is_backup: s.is_backup,
+            status: s.status || 'Published',
+            expected_time: s.expected_time || 60,
+            focus_category: s.focus_category || 'STEM',
+            questions: (s.questions || []).map((q: any) => ({
+              id: q.id,
+              sequence_order: q.sequence_order,
+              question_text: q.question_text,
+              show_at_seconds: q.show_at_seconds || 0,
+              options: (q.options || []).map((o: any) => ({
+                id: o.id,
+                option_letter: o.option_letter,
+                option_text: o.option_text,
+                target_dimension: o.target_dimension,
+                intensity_weight: o.intensity_weight
+              })).sort((a: any, b: any) => a.option_letter.localeCompare(b.option_letter))
+            })).sort((a: any, b: any) => a.sequence_order - b.sequence_order)
+          }));
+          setScenarios(mappedScenarios);
+        } else {
+          setScenarios(fallbackScenarios);
+        }
+
+        // 2. Fetch Enrolled Schools
+        const { data: schoolsData } = await supabase
+          .from('schools')
+          .select('*');
+        if (schoolsData && schoolsData.length > 0) {
+          setSchoolsList(schoolsData.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            board: s.board,
+            location: s.address || 'Unknown Address',
+            contact: s.contact_email || 'No email',
+            active: s.is_active,
+            totalCredits: 500,
+            usedCredits: 100
+          })));
+        } else {
+          setSchoolsList(INITIAL_SCHOOLS);
+        }
+
+        // 3. Fetch Classes
+        const { data: classesData } = await supabase
+          .from('school_classes')
+          .select('*');
+        if (classesData && classesData.length > 0) {
+          const classesMap: Record<string, string[]> = {};
+          classesData.forEach((c: any) => {
+            if (!classesMap[c.class_name]) {
+              classesMap[c.class_name] = [];
+            }
+            if (!classesMap[c.class_name].includes(c.section_name)) {
+              classesMap[c.class_name].push(c.section_name);
+            }
+          });
+          setAcademicClasses(classesMap);
+        } else {
+          setAcademicClasses(INITIAL_CLASSES);
+        }
+
+        // 4. Fetch Teachers
+        const { data: teachersData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_type', 'teacher');
+        if (teachersData && teachersData.length > 0) {
+          const mappedTeachers = [];
+          for (const t of teachersData) {
+            const { data: accessData } = await supabase
+              .from('teacher_class_access')
+              .select('class_id, school_classes(class_name, section_name)')
+              .eq('teacher_id', t.id);
+            
+            const classesList = (accessData || []).map((a: any) => 
+              a.school_classes ? `${a.school_classes.class_name}-${a.school_classes.section_name}` : null
+            ).filter(Boolean);
+
+            mappedTeachers.push({
+              email: t.email || `${t.full_name.toLowerCase().replace(/\s/g, '')}@psy.com`,
+              classes: classesList
+            });
+          }
+          setTeachers(mappedTeachers);
+        } else {
+          setTeachers(INITIAL_TEACHERS);
+        }
+
       } catch (err) {
         console.error('Admin verification error:', err);
+        // Load offline fallback data
+        setScenarios(fallbackScenarios);
+        setSchoolsList(INITIAL_SCHOOLS);
+        setTeachers(INITIAL_TEACHERS);
+        setAcademicClasses(INITIAL_CLASSES);
       } finally {
         setLoading(false);
       }
     };
-    checkAuth();
+    checkAuthAndLoad();
   }, [router]);
 
   // Synchronize question set form fields when scenario/set selection changes
@@ -460,6 +714,24 @@ export default function AdminConsole() {
         [newSectionClass]: updated
       };
     });
+
+    const syncClassAddition = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          for (const sec of sectionsToAdd) {
+            await supabase.from('school_classes').insert({
+              school_id: activeSchoolId,
+              class_name: newSectionClass,
+              section_name: sec
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error inserting classes in Supabase:', err);
+      }
+    };
+    syncClassAddition();
     setNewSectionName('');
   };
 
@@ -468,6 +740,22 @@ export default function AdminConsole() {
       ...prev,
       [cls]: prev[cls].filter(s => s !== sec)
     }));
+
+    const syncClassDeletion = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          await supabase.from('school_classes')
+            .delete()
+            .eq('school_id', activeSchoolId)
+            .eq('class_name', cls)
+            .eq('section_name', sec);
+        }
+      } catch (err) {
+        console.error('Error deleting class in Supabase:', err);
+      }
+    };
+    syncClassDeletion();
   };
 
   // Load scenario details for editing
@@ -499,25 +787,27 @@ export default function AdminConsole() {
     e.preventDefault();
     if (!scenarioTitle.trim() || !scenarioVideoUrl.trim()) return;
 
+    let targetScenId = '';
+    let updatedList: any[] = [];
+
     if (editingScenario) {
-      setScenarios(prev => prev.map(s => {
-        if (s.id === editingScenario.id) {
-          return {
-            ...s,
-            title: scenarioTitle,
-            video_url: scenarioVideoUrl,
-            target_age_group: scenarioAgeGroup,
-            status: scenarioStatus,
-            expected_time: scenarioExpectedTime,
-            focus_category: scenarioFocusCategory,
-            questions: scenarioQuestions
-          };
-        }
-        return s;
-      }));
+      targetScenId = editingScenario.id;
+      const updatedScen = {
+        ...editingScenario,
+        title: scenarioTitle,
+        video_url: scenarioVideoUrl,
+        target_age_group: scenarioAgeGroup,
+        status: scenarioStatus,
+        expected_time: scenarioExpectedTime,
+        focus_category: scenarioFocusCategory,
+        questions: scenarioQuestions
+      };
+      updatedList = scenarios.map(s => s.id === editingScenario.id ? updatedScen : s);
+      setScenarios(updatedList);
     } else {
+      targetScenId = generateUUID();
       const newScen = {
-        id: 'scen_' + Math.random().toString(36).substring(2, 9),
+        id: targetScenId,
         title: scenarioTitle,
         video_url: scenarioVideoUrl,
         target_age_group: scenarioAgeGroup,
@@ -527,14 +817,24 @@ export default function AdminConsole() {
         is_active: true,
         questions: [] // No questions initialised on creation
       };
-      setScenarios(prev => [...prev, newScen]);
+      updatedList = [...scenarios, newScen];
+      setScenarios(updatedList);
     }
+    
+    // Sync to Supabase
+    syncScenarioToSupabase(targetScenId, updatedList);
     setIsScenarioModalOpen(false);
   };
 
   const handleDeleteScenario = (id: string) => {
     if (confirm('Are you sure you want to delete this scenario?')) {
       setScenarios(prev => prev.filter(s => s.id !== id));
+      supabase.from('scenarios')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.error('Error deleting scenario in Supabase:', error);
+        });
     }
   };
 
@@ -550,16 +850,16 @@ export default function AdminConsole() {
       return;
     }
 
-    setScenarios(prev => prev.map(s => {
+    const updatedList = scenarios.map(s => {
       if (s.id === toScenarioId) {
         const otherQuestions = s.questions ? s.questions.filter((q: any) => q.sequence_order !== toSetNum) : [];
         const cloned = questionsToClone.map((q: any) => ({
           ...JSON.parse(JSON.stringify(q)),
-          id: 'q_' + Math.random().toString(36).substring(2, 9),
+          id: generateUUID(),
           sequence_order: toSetNum,
           options: q.options ? q.options.map((opt: any) => ({
             ...opt,
-            id: 'opt_' + Math.random().toString(36).substring(2, 9)
+            id: generateUUID()
           })) : []
         }));
         const questionsList = [...otherQuestions, ...cloned];
@@ -567,21 +867,25 @@ export default function AdminConsole() {
         return { ...s, questions: questionsList };
       }
       return s;
-    }));
+    });
 
+    setScenarios(updatedList);
+    syncScenarioToSupabase(toScenarioId, updatedList);
     setSelectedMatrixCell(null);
     alert(`Successfully cloned questions from Set ${fromSetNum} to Set ${toSetNum}!`);
   };
 
   const handleClearQuestionSet = (scenarioId: string, setNum: number) => {
     if (confirm(`Are you sure you want to clear all questions in Set ${setNum} for this scenario?`)) {
-      setScenarios(prev => prev.map(s => {
+      const updatedList = scenarios.map(s => {
         if (s.id === scenarioId) {
           const questionsList = s.questions ? s.questions.filter((q: any) => q.sequence_order !== setNum) : [];
           return { ...s, questions: questionsList };
         }
         return s;
-      }));
+      });
+      setScenarios(updatedList);
+      syncScenarioToSupabase(scenarioId, updatedList);
       setSelectedMatrixCell(null);
     }
   };
@@ -639,10 +943,35 @@ export default function AdminConsole() {
     }
   };
 
-  const handleApplyBulkChanges = () => {
+  const handleApplyBulkChanges = async () => {
     if (handleValidateBulkJson(bulkJsonText)) {
-      setScenarios(JSON.parse(bulkJsonText));
-      alert("Successfully applied scenario matrix updates from raw JSON schema!");
+      const parsedScenarios = JSON.parse(bulkJsonText);
+      setScenarios(parsedScenarios);
+      
+      alert("Applying scenario matrix updates... Please wait.");
+      try {
+        for (const s of parsedScenarios) {
+          const scenId = s.id && s.id.length > 10 ? s.id : generateUUID();
+          s.id = scenId;
+          
+          if (s.questions) {
+            s.questions.forEach((q: any) => {
+              if (!q.id || q.id.length < 10) q.id = generateUUID();
+              if (q.options) {
+                q.options.forEach((o: any) => {
+                  if (!o.id || o.id.length < 10) o.id = generateUUID();
+                });
+              }
+            });
+          }
+          
+          const updatedList = parsedScenarios.map((item: any) => item.id === scenId ? s : item);
+          await syncScenarioToSupabase(scenId, updatedList);
+        }
+        alert("Successfully applied scenario matrix updates from raw JSON schema and saved to Supabase!");
+      } catch (err: any) {
+        alert("Error syncing bulk changes to Supabase: " + err.message);
+      }
     } else {
       alert("Cannot apply changes. Please fix the validation errors first.");
     }
@@ -695,20 +1024,21 @@ export default function AdminConsole() {
     e.preventDefault();
     if (!qSetSelectedScenarioId) return;
 
-    setScenarios(prev => prev.map(s => {
+    let updatedScen: any = null;
+    const updatedList = scenarios.map(s => {
       if (s.id === qSetSelectedScenarioId) {
         const otherQuestions = s.questions ? s.questions.filter((q: any) => q.sequence_order !== qSetSetNumber) : [];
 
         const newQs = qSetQuestions.map((q: any) => {
           const mappedOptions = q.options.map((opt: any) => ({
             ...opt,
-            id: opt.id || 'opt_' + opt.option_letter.toLowerCase() + '_' + Math.random().toString(36).substring(2, 9)
+            id: opt.id && !opt.id.startsWith('opt_') && opt.id.length > 10 ? opt.id : generateUUID()
           }));
           return {
-            id: q.id || 'q_' + Math.random().toString(36).substring(2, 9),
+            id: q.id && !q.id.startsWith('q_') && q.id.length > 10 ? q.id : generateUUID(),
             sequence_order: qSetSetNumber,
             question_text: q.question_text,
-            show_at_seconds: q.show_at_seconds,
+            show_at_seconds: q.show_at_seconds || 0,
             options: mappedOptions
           };
         });
@@ -716,22 +1046,28 @@ export default function AdminConsole() {
         const questionsList = [...otherQuestions, ...newQs];
         questionsList.sort((a: any, b: any) => a.sequence_order - b.sequence_order);
 
-        return {
+        updatedScen = {
           ...s,
           questions: questionsList
         };
+        return updatedScen;
       }
       return s;
-    }));
+    });
 
+    setScenarios(updatedList);
+    if (updatedScen) {
+      syncScenarioToSupabase(qSetSelectedScenarioId, updatedList);
+    }
     setIsQuestionSetModalOpen(false);
   };
 
   const handleCreateSchool = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSchoolName.trim()) return;
+    const newSchoolId = generateUUID();
     const newSchool = {
-      id: 'sch_' + Math.random().toString(36).substring(2, 9),
+      id: newSchoolId,
       name: newSchoolName,
       board: newSchoolBoard,
       location: newSchoolLocation,
@@ -743,6 +1079,23 @@ export default function AdminConsole() {
     setSchoolsList(prev => [...prev, newSchool]);
     setIsSchoolModalOpen(false);
     
+    // Sync with Supabase
+    const syncSchoolCreation = async () => {
+      try {
+        await supabase.from('schools').insert({
+          id: newSchoolId,
+          name: newSchoolName,
+          board: newSchoolBoard,
+          address: newSchoolLocation,
+          contact_email: newSchoolContact,
+          is_active: true
+        });
+      } catch (err) {
+        console.error('Error inserting school in Supabase:', err);
+      }
+    };
+    syncSchoolCreation();
+    
     // Clear forms
     setNewSchoolName('');
     setNewSchoolLocation('');
@@ -753,7 +1106,14 @@ export default function AdminConsole() {
   const handleToggleSchoolActive = (id: string) => {
     setSchoolsList(prev => prev.map(s => {
       if (s.id === id) {
-        return { ...s, active: !s.active };
+        const nextActive = !s.active;
+        supabase.from('schools')
+          .update({ is_active: nextActive })
+          .eq('id', id)
+          .then(({ error }) => {
+            if (error) console.error('Error toggling school active:', error);
+          });
+        return { ...s, active: nextActive };
       }
       return s;
     }));
@@ -774,6 +1134,12 @@ export default function AdminConsole() {
   const handleDeleteSchool = (id: string) => {
     if (confirm('Are you sure you want to delete this school? This will cascade delete its roster and credits.')) {
       setSchoolsList(prev => prev.filter(s => s.id !== id));
+      supabase.from('schools')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.error('Error deleting school in Supabase:', error);
+        });
     }
   };
 
@@ -847,15 +1213,95 @@ export default function AdminConsole() {
   };
 
   // Delegate teacher permissions
-  const handleDelegateTeacher = (e: React.FormEvent) => {
+  const handleDelegateTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeacherEmail.trim()) return;
+
+    const newT = { email: newTeacherEmail, classes: newTeacherClasses };
     setTeachers(prev => [
       ...prev,
-      { email: newTeacherEmail, classes: newTeacherClasses }
+      newT
     ]);
+    
+    // Sync with Supabase
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        // Check if profile exists for teacher email or create one
+        const { data: teacherProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', newTeacherEmail)
+          .single();
+        
+        let teacherId = teacherProfile?.id;
+        if (!teacherId) {
+          const { data: newProfile } = await supabase
+            .from('profiles')
+            .insert({
+              id: generateUUID(),
+              full_name: newTeacherEmail.split('@')[0],
+              email: newTeacherEmail,
+              user_type: 'teacher',
+              age_tier: 'College (18+)',
+              institution_type: 'School'
+            })
+            .select()
+            .single();
+          teacherId = newProfile?.id;
+        }
+        
+        if (teacherId) {
+          // Assign class access in teacher_class_access
+          for (const clsSec of newTeacherClasses) {
+            const [cls, sec] = clsSec.split('-');
+            const { data: schClass } = await supabase
+              .from('school_classes')
+              .select('id')
+              .eq('school_id', activeSchoolId)
+              .eq('class_name', cls)
+              .eq('section_name', sec)
+              .limit(1)
+              .single();
+            
+            if (schClass) {
+              await supabase
+                .from('teacher_class_access')
+                .upsert({
+                  teacher_id: teacherId,
+                  class_id: schClass.id,
+                  granted_by: session.user.id
+                });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error delegating teacher in Supabase:', err);
+    }
+    
     setNewTeacherEmail('');
     setNewTeacherClasses([]);
+  };
+
+  const handleDeleteTeacher = async (email: string) => {
+    setTeachers(prev => prev.filter(x => x.email !== email));
+    
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', email)
+        .single();
+      if (profile) {
+        await supabase
+          .from('teacher_class_access')
+          .delete()
+          .eq('teacher_id', profile.id);
+      }
+    } catch (err) {
+      console.error('Error deleting teacher class access in Supabase:', err);
+    }
   };
 
   // Logo upload simulation
@@ -2738,7 +3184,7 @@ export default function AdminConsole() {
                           <span className="text-[10px] text-zinc-500">Access: {t.classes.join(', ')}</span>
                         </div>
                         <button 
-                          onClick={() => setTeachers(prev => prev.filter(x => x.email !== t.email))}
+                          onClick={() => handleDeleteTeacher(t.email)}
                           className="text-red-400 hover:text-red-300 font-bold text-[10px]"
                         >
                           Revoke
