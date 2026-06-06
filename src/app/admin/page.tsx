@@ -463,13 +463,24 @@ export default function AdminConsole() {
         'Conventional': 'The Organizer'
       };
 
+      const assignedIds = new Set<string>();
+
       const parsedScenarios = parsed.map((s: any) => {
         // Find existing scenario by ID or by Title
+        let sId = s.id;
         const existingScen = dbScenarios.find((x: any) => x.id === s.id || x.title === s.title);
-        const sId = existingScen ? existingScen.id : (s.id && s.id.length >= 10 ? s.id : generateUUID());
+        if (existingScen && !assignedIds.has(existingScen.id)) {
+          sId = existingScen.id;
+        } else if (sId && sId.length >= 10 && !assignedIds.has(sId)) {
+          // Keep JSON ID if unique and valid
+        } else {
+          sId = generateUUID();
+        }
+        assignedIds.add(sId);
 
         const questions = (s.questions || []).map((q: any) => {
           // Find existing question by ID, or by sequence_order + question_text
+          let qId = q.id;
           let existingQ = null;
           if (existingScen && existingScen.questions) {
             existingQ = existingScen.questions.find((x: any) => 
@@ -477,10 +488,19 @@ export default function AdminConsole() {
               (x.sequence_order === q.sequence_order && x.question_text === q.question_text)
             );
           }
-          const qId = existingQ ? existingQ.id : (q.id && q.id.length >= 10 && !q.id.startsWith('temp_') && !q.id.startsWith('q_') ? q.id : generateUUID());
+          
+          if (existingQ && !assignedIds.has(existingQ.id)) {
+            qId = existingQ.id;
+          } else if (qId && qId.length >= 10 && !qId.startsWith('temp_') && !qId.startsWith('q_') && !assignedIds.has(qId)) {
+            // Keep JSON ID if unique and valid
+          } else {
+            qId = generateUUID();
+          }
+          assignedIds.add(qId);
 
           const options = (q.options || []).map((o: any) => {
             // Find existing option by ID, or by option_letter
+            let oId = o.id;
             let existingO = null;
             if (existingQ && existingQ.options) {
               existingO = existingQ.options.find((x: any) => 
@@ -488,7 +508,15 @@ export default function AdminConsole() {
                 x.option_letter === o.option_letter
               );
             }
-            const oId = existingO ? existingO.id : (o.id && o.id.length >= 10 && !o.id.startsWith('temp_') && !o.id.startsWith('opt_') ? o.id : generateUUID());
+            
+            if (existingO && !assignedIds.has(existingO.id)) {
+              oId = existingO.id;
+            } else if (oId && oId.length >= 10 && !oId.startsWith('temp_') && !oId.startsWith('opt_') && !assignedIds.has(oId)) {
+              // Keep JSON ID if unique and valid
+            } else {
+              oId = generateUUID();
+            }
+            assignedIds.add(oId);
 
             // Normalize target dimension
             let target_dimension = o.target_dimension;
