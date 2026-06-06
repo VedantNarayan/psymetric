@@ -915,9 +915,12 @@ export default function AdminConsole() {
             .eq('id', session.user.id)
             .single();
           profile = data;
-          setProfileData(data);
+          // Merge session email as fallback if profiles.email is null
+          setProfileData({ ...data, email: data?.email || session.user.email });
         } catch (err) {
           console.warn('Failed to retrieve profile:', err);
+          // Still set minimal profile data from the session so the UI renders
+          setProfileData({ email: session.user.email, full_name: session.user.email?.split('@')[0] });
         }
 
         if (profile?.user_type === 'super_admin' || profile?.is_admin) {
