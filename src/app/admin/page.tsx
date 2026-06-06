@@ -437,67 +437,110 @@ export default function AdminConsole() {
   const syncBulkScenariosToSupabase = async (parsed: any[], description?: string) => {
     alert("Applying scenario matrix updates to Supabase... Please wait.");
     try {
-      // 1. Assign IDs to scenarios, questions, options if missing
-      for (const s of parsed) {
-        if (!s.id || s.id.length < 10) s.id = generateUUID();
-        if (s.questions) {
-          s.questions.forEach((q: any) => {
-            if (!q.id || q.id.length < 10) q.id = generateUUID();
-            if (q.options) {
-              q.options.forEach((o: any) => {
-                if (!o.id || o.id.length < 10) o.id = generateUUID();
-              });
+      // 1. Fetch current scenarios, questions, and options from database to match and reuse IDs
+      const { data: dbScens, error: fetchErr } = await supabase
+        .from('scenarios')
+        .select('*, questions(*, options(*))');
+
+      if (fetchErr) {
+        console.warn('Could not fetch existing database records for ID matching:', fetchErr);
+      }
+      const dbScenarios = dbScens || [];
+
+      // 2. Assign and match IDs
+      const dimensionMap: Record<string, string> = {
+        'R': 'The Builder',
+        'Realistic': 'The Builder',
+        'I': 'The Thinker',
+        'Investigative': 'The Thinker',
+        'A': 'The Creator',
+        'Artistic': 'The Creator',
+        'S': 'The Connector',
+        'Social': 'The Connector',
+        'E': 'The Leader',
+        'Enterprising': 'The Leader',
+        'C': 'The Organizer',
+        'Conventional': 'The Organizer'
+      };
+
+      const parsedScenarios = parsed.map((s: any) => {
+        // Find existing scenario by ID or by Title
+        const existingScen = dbScenarios.find((x: any) => x.id === s.id || x.title === s.title);
+        const sId = existingScen ? existingScen.id : (s.id && s.id.length >= 10 ? s.id : generateUUID());
+
+        const questions = (s.questions || []).map((q: any) => {
+          // Find existing question by ID, or by sequence_order + question_text
+          let existingQ = null;
+          if (existingScen && existingScen.questions) {
+            existingQ = existingScen.questions.find((x: any) => 
+              x.id === q.id || 
+              (x.sequence_order === q.sequence_order && x.question_text === q.question_text)
+            );
+          }
+          const qId = existingQ ? existingQ.id : (q.id && q.id.length >= 10 && !q.id.startsWith('temp_') && !q.id.startsWith('q_') ? q.id : generateUUID());
+
+          const options = (q.options || []).map((o: any) => {
+            // Find existing option by ID, or by option_letter
+            let existingO = null;
+            if (existingQ && existingQ.options) {
+              existingO = existingQ.options.find((x: any) => 
+                x.id === o.id || 
+                x.option_letter === o.option_letter
+              );
             }
+            const oId = existingO ? existingO.id : (o.id && o.id.length >= 10 && !o.id.startsWith('temp_') && !o.id.startsWith('opt_') ? o.id : generateUUID());
+
+            // Normalize target dimension
+            let target_dimension = o.target_dimension;
+            if (target_dimension) {
+              target_dimension = target_dimension.split(',')
+                .map((d: string) => {
+                  const trimmed = d.trim();
+                  return dimensionMap[trimmed] || trimmed;
+                })
+                .join(', ');
+            }
+
+            return {
+              ...o,
+              id: oId,
+              target_dimension
+            };
           });
-        }
-      }
 
-      // 2. Delete any scenarios in the database that are NOT in our imported JSON list
-      const importedIds = parsed.map((s: any) => s.id);
-      if (importedIds.length > 0) {
-        const { error: deleteError } = await supabase
-          .from('scenarios')
-          .delete()
-          .not('id', 'in', `(${importedIds.join(',')})`);
-        if (deleteError) throw deleteError;
-      } else {
-        const { error: deleteError } = await supabase
-          .from('scenarios')
-          .delete()
-          .neq('id', '00000000-0000-0000-0000-000000000000');
-        if (deleteError) throw deleteError;
-      }
-
-      // 3. Upsert scenarios one by one
-      for (const s of parsed) {
-        await syncScenarioToSupabase(s.id, parsed);
-      }
-
-      // 4. Automatically create a version commit for bulk upload
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user;
-      const commitHash = Math.random().toString(36).substring(2, 8);
-      
-      const { error: commitError } = await supabase
-        .from('scenario_commits')
-        .insert({
-          commit_hash: commitHash,
-          description: description || `Auto-Commit: Bulk sync of ${parsed.length} scenarios`,
-          scenarios_snapshot: parsed,
-          created_by: user?.id || null
+          return {
+            ...q,
+            id: qId,
+            options
+          };
         });
 
-      if (commitError) {
-        console.error("Error creating auto-commit:", commitError);
-      } else {
-        await fetchVersionsAndBackups();
-      }
+        return {
+          ...s,
+          id: sId,
+          questions
+        };
+      });
 
-      // 5. Update state variables
-      setScenarios(parsed);
-      setBulkJsonText(JSON.stringify(parsed, null, 2));
+      // 3. Call the atomic transactional stored procedure (RPC)
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('sync_scenarios_snapshot', {
+        p_scenarios: parsedScenarios,
+        p_description: description || `Auto-Commit: Bulk sync of ${parsedScenarios.length} scenarios`,
+        p_user_id: user?.id || null
+      });
+
+      if (rpcError) throw rpcError;
+
+      // 4. Update state variables and fetch versions
+      await fetchVersionsAndBackups();
+
+      setScenarios(parsedScenarios);
+      setBulkJsonText(JSON.stringify(parsedScenarios, null, 2));
       setBulkJsonError(null);
-      alert(`Successfully applied and synchronized all scenarios to Supabase! (Created Auto-Commit [${commitHash}])`);
+      alert(`Successfully applied and synchronized all scenarios to Supabase! (Created Auto-Commit [${rpcResult?.commit_hash || 'unknown'}])`);
       return true;
     } catch (err: any) {
       console.error('Error in syncBulkScenariosToSupabase:', err);
@@ -731,80 +774,7 @@ export default function AdminConsole() {
   const syncScenarioToSupabase = async (scenId: string, updatedList?: any[]) => {
     const list = updatedList || scenarios;
     const scen = list.find(s => s.id === scenId);
-    if (!scen) return;
-
-    try {
-      // 1. Upsert Scenario
-      const { error: scenError } = await supabase
-        .from('scenarios')
-        .upsert({
-          id: scen.id,
-          title: scen.title,
-          video_url: scen.video_url,
-          target_age_group: scen.target_age_group || 'All',
-          status: scen.status || 'Published',
-          expected_time: scen.expected_time || 60,
-          focus_category: scen.focus_category || 'STEM',
-          is_active: scen.is_active !== false
-        });
-
-      if (scenError) throw scenError;
-
-      // 2. Delete existing questions that are no longer in this scenario
-      const currentQIds = (scen.questions || []).map((q: any) => q.id).filter((id: string) => !id.startsWith('temp_') && !id.startsWith('q_'));
-      if (currentQIds.length > 0) {
-        await supabase
-          .from('questions')
-          .delete()
-          .eq('scenario_id', scenId)
-          .not('id', 'in', `(${currentQIds.join(',')})`);
-      } else {
-        await supabase
-          .from('questions')
-          .delete()
-          .eq('scenario_id', scenId);
-      }
-
-      // 3. Upsert questions and their options
-      for (const q of (scen.questions || [])) {
-        const isNewQ = !q.id || q.id.startsWith('temp_') || q.id.startsWith('q_') || q.id.length < 10;
-        const qId = isNewQ ? generateUUID() : q.id;
-
-        const { error: qError } = await supabase
-          .from('questions')
-          .upsert({
-            id: qId,
-            scenario_id: scenId,
-            sequence_order: q.sequence_order,
-            question_text: q.question_text,
-            show_at_seconds: q.show_at_seconds || 0
-          });
-
-        if (qError) throw qError;
-
-        // Upsert options for this question
-        for (const o of (q.options || [])) {
-          const isNewO = !o.id || o.id.startsWith('temp_') || o.id.startsWith('opt_') || o.id.length < 10;
-          const oId = isNewO ? generateUUID() : o.id;
-
-          const { error: oError } = await supabase
-            .from('options')
-            .upsert({
-              id: oId,
-              question_id: qId,
-              option_letter: o.option_letter,
-              option_text: o.option_text,
-              target_dimension: o.target_dimension,
-              intensity_weight: o.intensity_weight
-            });
-
-          if (oError) throw oError;
-        }
-      }
-    } catch (err) {
-      console.error('Error syncing scenario to Supabase:', err);
-      throw err;
-    }
+    await syncBulkScenariosToSupabase(list, `Auto-Commit: Updated scenario "${scen?.title || 'Unknown'}"`);
   };
 
   // Save school name/board/logo to Supabase when changed
@@ -1192,15 +1162,11 @@ export default function AdminConsole() {
     setIsScenarioModalOpen(false);
   };
 
-  const handleDeleteScenario = (id: string) => {
+  const handleDeleteScenario = async (id: string) => {
     if (confirm('Are you sure you want to delete this scenario?')) {
-      setScenarios(prev => prev.filter(s => s.id !== id));
-      supabase.from('scenarios')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Error deleting scenario in Supabase:', error);
-        });
+      const scen = scenarios.find(s => s.id === id);
+      const updatedList = scenarios.filter(s => s.id !== id);
+      await syncBulkScenariosToSupabase(updatedList, `Auto-Commit: Deleted scenario "${scen?.title || 'Unknown'}"`);
     }
   };
 
@@ -1210,57 +1176,11 @@ export default function AdminConsole() {
     if (!confirm('Are you sure you want to seed the default 18 baseline scenarios to the database?')) return;
     setSeedingLoading(true);
     try {
-      for (const s of fallbackScenarios) {
-        await supabase.from('scenarios').upsert({
-          id: s.id,
-          title: s.title,
-          video_url: s.video_url,
-          target_age_group: s.target_age_group || 'All',
-          status: 'Published',
-          expected_time: 60,
-          focus_category: 'STEM',
-          is_active: true
-        });
-
-        for (const q of (s.questions || [])) {
-          await supabase.from('questions').upsert({
-            id: q.id,
-            scenario_id: s.id,
-            sequence_order: q.sequence_order,
-            question_text: q.question_text,
-            show_at_seconds: q.show_at_seconds || 0
-          });
-
-          for (const o of (q.options || [])) {
-            const dimensionMap: Record<string, string> = {
-              'R': 'The Builder',
-              'Realistic': 'The Builder',
-              'I': 'The Thinker',
-              'Investigative': 'The Thinker',
-              'A': 'The Creator',
-              'Artistic': 'The Creator',
-              'S': 'The Connector',
-              'Social': 'The Connector',
-              'E': 'The Leader',
-              'Enterprising': 'The Leader',
-              'C': 'The Organizer',
-              'Conventional': 'The Organizer'
-            };
-            const mappedDim = dimensionMap[o.target_dimension] || o.target_dimension;
-
-            await supabase.from('options').upsert({
-              id: o.id.length > 5 ? o.id : generateUUID(),
-              question_id: q.id,
-              option_letter: o.option_letter,
-              option_text: o.option_text,
-              target_dimension: mappedDim,
-              intensity_weight: o.intensity_weight
-            });
-          }
-        }
+      const success = await syncBulkScenariosToSupabase(fallbackScenarios, "Auto-Commit: Seeded default baseline scenarios");
+      if (success) {
+        alert('Successfully seeded 18 baseline scenarios to Supabase!');
+        window.location.reload();
       }
-      alert('Successfully seeded 18 baseline scenarios to Supabase!');
-      window.location.reload();
     } catch (err: any) {
       alert('Error seeding default scenarios: ' + err.message);
     } finally {
