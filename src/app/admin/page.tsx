@@ -1908,18 +1908,25 @@ export default function AdminConsole() {
                 className="w-full text-left p-2 rounded-xl bg-zinc-900/20 border border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/40 transition-all flex items-center gap-2.5 active:scale-98"
               >
                 {/* Avatar */}
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 ${
-                  profileData.avatar_url && profileData.avatar_url.startsWith('bg-') 
-                    ? profileData.avatar_url 
-                    : 'bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-                }`}>
-                  {profileData.avatar_url && !profileData.avatar_url.startsWith('bg-') ? (
-                    <img src={profileData.avatar_url} alt="Avatar" className="w-full h-full object-cover rounded-lg" />
-                  ) : (
-                    <span className="text-[11px] font-black uppercase">
-                      {(profileData.first_name?.[0] || '') + (profileData.last_name?.[0] || profileData.email?.[0] || 'U')}
-                    </span>
-                  )}
+                <div className={`shrink-0 rounded-lg ${currentRole === 'super_admin' ? 'p-[2px]' : ''}`}
+                  style={currentRole === 'super_admin' ? {
+                    background: 'linear-gradient(135deg, #FFD700, #F5A623, #FFD700, #FFC107)',
+                    boxShadow: '0 0 8px rgba(255,215,0,0.35)',
+                  } : undefined}
+                >
+                  <div className={`w-8 h-8 rounded-[6px] flex items-center justify-center text-[10px] font-black text-white ${
+                    profileData.avatar_url && profileData.avatar_url.startsWith('bg-') 
+                      ? profileData.avatar_url 
+                      : 'bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                  }`}>
+                    {profileData.avatar_url && !profileData.avatar_url.startsWith('bg-') ? (
+                      <img src={profileData.avatar_url} alt="Avatar" className="w-full h-full object-cover rounded-[6px]" />
+                    ) : (
+                      <span className="text-[11px] font-black uppercase">
+                        {(profileData.first_name?.[0] || '') + (profileData.last_name?.[0] || profileData.email?.[0] || 'U')}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Profile Text */}
