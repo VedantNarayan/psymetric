@@ -7,7 +7,7 @@ import {
   BarChart3, Settings, Video, Upload, Shield, 
   Trash2, Plus, Sparkles, Sliders, Users, 
   Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2, Pencil,
-  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen, Archive, LogOut, ChevronUp
+  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen, Archive, LogOut, ChevronUp, X, MapPin
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fallbackScenarios } from '@/lib/supabase/fallbackData';
@@ -133,6 +133,10 @@ export default function AdminConsole() {
   const [profileData, setProfileData] = useState<any>(null);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [profileSettingsModalOpen, setProfileSettingsModalOpen] = useState(false);
+
+  // Impersonation states
+  const [impersonatingSchool, setImpersonatingSchool] = useState<any>(null);
+  const [showSchoolPicker, setShowSchoolPicker] = useState(false);
   
   // Form states for profile edit modal
   const [editFirstName, setEditFirstName] = useState('');
@@ -1581,17 +1585,76 @@ export default function AdminConsole() {
     }
   };
 
-  const handleImpersonateSchool = (sch: any) => {
+  const handleImpersonateSchool = async (sch: any) => {
+    setImpersonatingSchool(sch);
     setSchoolName(sch.name);
-    setSchoolBoard(sch.board);
+    setSchoolBoard(sch.board || 'CBSE');
+    setActiveSchoolId(sch.id);
+    setShowSchoolPicker(false);
+
+    // Load school-specific data from DB
+    try {
+      // Fetch school logo
+      const { data: schoolRow } = await supabase
+        .from('schools')
+        .select('*')
+        .eq('id', sch.id)
+        .single();
+      if (schoolRow?.logo_url) setSchoolLogo(schoolRow.logo_url);
+
+      // Fetch classes for this school
+      const { data: classesData } = await supabase
+        .from('school_classes')
+        .select('*')
+        .eq('school_id', sch.id);
+      if (classesData && classesData.length > 0) {
+        const classesMap: Record<string, string[]> = {};
+        classesData.forEach((c: any) => {
+          if (!classesMap[c.class_name]) classesMap[c.class_name] = [];
+          if (!classesMap[c.class_name].includes(c.section_name)) classesMap[c.class_name].push(c.section_name);
+        });
+        setAcademicClasses(classesMap);
+        setStats(prev => ({ ...prev, activeClasses: classesData.length }));
+      } else {
+        setAcademicClasses({});
+        setStats(prev => ({ ...prev, activeClasses: 0 }));
+      }
+
+      // Fetch student roster for this school
+      const { data: rosterData } = await supabase
+        .from('student_roster')
+        .select('*')
+        .eq('school_id', sch.id);
+      setStats(prev => ({ ...prev, totalStudents: rosterData?.length || 0 }));
+
+      // Fetch assessment sessions count
+      const { data: sessionsData } = await supabase
+        .from('assessment_sessions')
+        .select('id')
+        .eq('school_id', sch.id);
+      setStats(prev => ({ ...prev, evaluationsDone: sessionsData?.length || 0 }));
+
+      // Fetch credits
+      const { data: creditsData } = await supabase
+        .from('assessment_credits')
+        .select('*')
+        .eq('school_id', sch.id);
+      const totalCr = creditsData?.reduce((sum: number, c: any) => sum + (c.total_credits || 0), 0) || 0;
+      const usedCr = creditsData?.reduce((sum: number, c: any) => sum + (c.used_credits || 0), 0) || 0;
+      setStats(prev => ({ ...prev, creditsLeft: totalCr - usedCr }));
+    } catch (err) {
+      console.warn('Error loading impersonated school data:', err);
+    }
+
     // Switch to school admin view
     setCurrentRole('school_admin');
     setActiveTab('mission_control');
-    // Also mock credit statistics
-    setStats(prev => ({
-      ...prev,
-      creditsLeft: sch.totalCredits - sch.usedCredits
-    }));
+  };
+
+  const handleExitImpersonation = () => {
+    setImpersonatingSchool(null);
+    setCurrentRole('super_admin');
+    setActiveTab('scenarios');
   };
 
   // Parse roster CSV data
@@ -1777,28 +1840,30 @@ export default function AdminConsole() {
             />
           </div>
 
-          {/* Sandbox Role Switcher */}
-          <div className="p-3 bg-zinc-900/40 border border-zinc-800 rounded-2xl space-y-2">
-            <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest block">Operational Mode</span>
-            <div className="grid grid-cols-2 gap-1.5 text-center">
+          {/* Operational Mode Badge */}
+          {impersonatingSchool ? (
+            <div className="p-3 bg-teal-950/30 border border-teal-800/40 rounded-2xl space-y-2">
+              <span className="text-[9px] font-bold text-teal-500/70 uppercase tracking-widest block">Impersonating School</span>
+              <div className="flex items-center gap-2">
+                <Building className="w-4 h-4 text-teal-400" />
+                <span className="text-xs font-black text-teal-300 truncate">{impersonatingSchool.name}</span>
+              </div>
               <button
-                onClick={() => { setCurrentRole('school_admin'); setActiveTab('mission_control'); }}
-                className={`py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
-                  currentRole === 'school_admin' ? 'bg-teal-500 text-black font-black' : 'text-zinc-400 hover:bg-zinc-800'
-                }`}
+                onClick={handleExitImpersonation}
+                className="w-full py-1.5 text-[10px] font-extrabold rounded-lg bg-red-950/40 border border-red-900/30 text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-all flex items-center justify-center gap-1.5"
               >
-                School Admin
-              </button>
-              <button
-                onClick={() => { setCurrentRole('super_admin'); setActiveTab('scenarios'); }}
-                className={`py-1.5 text-[10px] font-extrabold rounded-lg transition-all ${
-                  currentRole === 'super_admin' ? 'bg-purple-600 text-white font-black shadow-[0_0_10px_rgba(168,85,247,0.3)]' : 'text-zinc-400 hover:bg-zinc-800'
-                }`}
-              >
-                Super Admin
+                <X className="w-3 h-3" /> Exit Impersonation
               </button>
             </div>
-          </div>
+          ) : (
+            <div className="p-3 bg-zinc-900/40 border border-zinc-800 rounded-2xl space-y-2">
+              <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest block">Operational Mode</span>
+              <div className="flex items-center gap-2 py-1">
+                <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.5)]"></div>
+                <span className="text-[11px] font-black text-purple-300">Super Admin</span>
+              </div>
+            </div>
+          )}
 
           {/* Tab Button Lists */}
           <nav className="space-y-2">
@@ -1864,8 +1929,8 @@ export default function AdminConsole() {
                   <Users className="w-4 h-4" /> User Directory
                 </button>
                 <button
-                  onClick={() => { setCurrentRole('school_admin'); setActiveTab('mission_control'); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-zinc-500 hover:text-zinc-300"
+                  onClick={() => setShowSchoolPicker(true)}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900 transition-all"
                 >
                   <Eye className="w-4 h-4" /> Impersonate School
                 </button>
@@ -5203,6 +5268,81 @@ export default function AdminConsole() {
               </form>
             </motion.div>
           </div>
+        )}
+
+        {/* School Picker Modal for Impersonation */}
+        {showSchoolPicker && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+            onClick={() => setShowSchoolPicker(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-zinc-950 border border-zinc-800 rounded-2xl w-full max-w-lg max-h-[75vh] flex flex-col shadow-2xl"
+            >
+              {/* Header */}
+              <div className="p-5 border-b border-zinc-800 flex items-center justify-between shrink-0">
+                <div>
+                  <h2 className="text-lg font-black text-white flex items-center gap-2">
+                    <Eye className="w-5 h-5 text-teal-400" /> Impersonate School
+                  </h2>
+                  <p className="text-xs text-zinc-500 mt-0.5">Select a school to view its dashboard and data as a School Admin.</p>
+                </div>
+                <button
+                  onClick={() => setShowSchoolPicker(false)}
+                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-all"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* School List */}
+              <div className="p-4 overflow-y-auto flex-1 space-y-2">
+                {schoolsList.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Building className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
+                    <p className="text-sm text-zinc-500 font-bold">No enrolled schools found.</p>
+                    <p className="text-xs text-zinc-600 mt-1">Enroll a school first from the Enrolled Schools tab.</p>
+                  </div>
+                ) : (
+                  schoolsList.map((sch: any) => (
+                    <button
+                      key={sch.id}
+                      onClick={() => handleImpersonateSchool(sch)}
+                      className="w-full text-left p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-teal-800/50 hover:bg-teal-950/20 transition-all group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-600 to-emerald-700 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-lg">
+                            {sch.name?.[0] || 'S'}
+                          </div>
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-extrabold text-white truncate group-hover:text-teal-300 transition-colors">{sch.name}</h4>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] font-bold text-zinc-500 flex items-center gap-1">
+                                <MapPin className="w-3 h-3" /> {sch.location}
+                              </span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{sch.board}</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${sch.active ? 'bg-emerald-950/50 text-emerald-400' : 'bg-red-950/50 text-red-400'}`}>
+                                {sch.active ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <Eye className="w-4 h-4 text-zinc-700 group-hover:text-teal-400 transition-colors shrink-0" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
