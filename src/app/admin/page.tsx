@@ -1653,6 +1653,47 @@ export default function AdminConsole() {
     setSimLogs(prev => [...prev, `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Video ended. Simulation complete.`]);
   };
 
+  const getSimVideoDuration = () => {
+    if (simVideoRef.current && !isNaN(simVideoRef.current.duration) && isFinite(simVideoRef.current.duration)) {
+      return Math.floor(simVideoRef.current.duration);
+    }
+    return 60;
+  };
+
+  const handleSimTimelineScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = Number(e.target.value);
+    setSimCurrentTime(newTime);
+    if (simVideoRef.current) {
+      simVideoRef.current.currentTime = newTime;
+    }
+    
+    // Position simCurrentQIndex correctly based on scrubbed time
+    const nextQIndex = simQuestions.findIndex(q => q.show_at_seconds > newTime);
+    if (nextQIndex !== -1) {
+      setSimCurrentQIndex(nextQIndex);
+    } else {
+      setSimCurrentQIndex(simQuestions.length);
+    }
+
+    // Check if scrubbed time is exactly at or past a question's show_at_seconds
+    const exactQIndex = simQuestions.findIndex(q => Math.floor(q.show_at_seconds) === newTime);
+    if (exactQIndex !== -1) {
+      setSimCurrentQIndex(exactQIndex);
+      setSimShowOverlay(true);
+      if (simVideoRef.current) {
+        simVideoRef.current.pause();
+        setSimVideoPlaying(false);
+      }
+    } else {
+      setSimShowOverlay(false);
+    }
+    
+    setSimLogs(prev => [
+      ...prev,
+      `[00:${newTime < 10 ? '0' + newTime : newTime}] Scrubbed timeline.`
+    ]);
+  };
+
   const handleCreateQuestionSetClick = () => {
     if (scenarios.length === 0) {
       alert('Please create at least one scenario first before creating question sets.');
@@ -3590,13 +3631,12 @@ export default function AdminConsole() {
                               </div>
                             ) : (
                               <>
-                                {/* Live Backdrop Video */}
                                 <video
                                   ref={simVideoRef}
                                   src={scenarios.find(s => s.id === simScenarioId)?.video_url || ''}
                                   className="absolute inset-0 w-full h-full object-cover"
                                   playsInline
-                                  muted
+                                  muted={false}
                                   onTimeUpdate={handleSimVideoTimeUpdate}
                                   onEnded={handleSimVideoEnded}
                                 />
@@ -3745,9 +3785,22 @@ export default function AdminConsole() {
                               </button>
                             </div>
 
-                            <div className="text-[10px] text-zinc-500 font-mono">
-                              Timeline: 00:{simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime} / 00:{simVideoRef.current ? Math.floor(simVideoRef.current.duration) || 60 : 60}
-                            </div>
+                             <div className="flex-1 flex items-center gap-3 px-2">
+                               <input
+                                 type="range"
+                                 min={0}
+                                 max={getSimVideoDuration()}
+                                 value={simCurrentTime}
+                                 onChange={handleSimTimelineScrub}
+                                 className="flex-1 h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-teal-500 hover:accent-teal-400 focus:outline-none"
+                                 style={{
+                                   background: `linear-gradient(to right, #14b8a6 0%, #14b8a6 ${getSimVideoDuration() > 0 ? (simCurrentTime / getSimVideoDuration()) * 100 : 0}%, #27272a ${getSimVideoDuration() > 0 ? (simCurrentTime / getSimVideoDuration()) * 100 : 0}%, #27272a 100%)`
+                                 }}
+                               />
+                               <div className="text-[10px] text-zinc-500 font-mono shrink-0 select-none">
+                                 00:{simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime} / 00:{getSimVideoDuration() < 10 ? '0' + getSimVideoDuration() : getSimVideoDuration()}
+                                </div>
+                             </div>
 
                             <button
                               onClick={() => {
