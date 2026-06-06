@@ -218,6 +218,8 @@ export default function AdminConsole() {
   const [isQuestionSetModalOpen, setIsQuestionSetModalOpen] = useState(false);
   const [qSetSelectedScenarioId, setQSetSelectedScenarioId] = useState('');
   const [qSetSetNumber, setQSetSetNumber] = useState(1);
+  const [editingQuestionId, setEditingQuestionId] = useState<string | null>(null);
+  const [editQForm, setEditQForm] = useState<any>(null);
   const [qSetQuestions, setQSetQuestions] = useState<any[]>([
     {
       question_text: '',
@@ -1527,6 +1529,45 @@ export default function AdminConsole() {
       }
     }
     setIsQuestionSetModalOpen(false);
+  };
+
+  const handleInlineSaveQuestion = async (scenId: string) => {
+    if (!editQForm) return;
+
+    if (!editQForm.question_text.trim()) {
+      alert('Question prompt cannot be empty.');
+      return;
+    }
+
+    const updatedList = scenarios.map(s => {
+      if (s.id === scenId) {
+        const questionsList = s.questions.map((q: any) => {
+          if (q.id === editQForm.id) {
+            return {
+              ...editQForm,
+              question_text: editQForm.question_text.trim()
+            };
+          }
+          return q;
+        });
+
+        return {
+          ...s,
+          questions: questionsList
+        };
+      }
+      return s;
+    });
+
+    setScenarios(updatedList);
+    setEditingQuestionId(null);
+    setEditQForm(null);
+
+    try {
+      await syncScenarioToSupabase(scenId, updatedList);
+    } catch (err: any) {
+      alert("Failed to save question changes in database: " + err.message);
+    }
   };
 
   const handleCreateSchool = (e: React.FormEvent) => {
@@ -2863,6 +2904,157 @@ export default function AdminConsole() {
                             {scen.questions && scen.questions.length > 0 ? (
                               scen.questions.map((q: any, qIdx: number) => {
                                 const readability = estimateReadability(q.question_text);
+
+                                if (editingQuestionId === q.id) {
+                                  return (
+                                    <div key={q.id || qIdx} className="p-5 rounded-2xl bg-zinc-905 border border-purple-500/40 space-y-4 shadow-xl text-left">
+                                      <div className="flex justify-between items-center text-[10px] text-zinc-500 font-bold">
+                                        <span>Set {q.sequence_order} • Q{qIdx + 1} (Editing Inline)</span>
+                                      </div>
+
+                                      {/* Question Prompt */}
+                                      <div className="space-y-1">
+                                        <label className="text-[10px] text-zinc-500 font-bold uppercase block">Question Prompt</label>
+                                        <textarea
+                                          value={editQForm.question_text}
+                                          onChange={(e) => setEditQForm({ ...editQForm, question_text: e.target.value })}
+                                          rows={2}
+                                          className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white focus:border-purple-500"
+                                        />
+                                      </div>
+
+                                      {/* Trigger Time & Timer Duration */}
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] text-zinc-500 font-bold uppercase block">Trigger time (sec)</label>
+                                          <input
+                                            type="number"
+                                            required
+                                            min="0"
+                                            value={editQForm.show_at_seconds}
+                                            onChange={(e) => setEditQForm({ ...editQForm, show_at_seconds: Number(e.target.value) })}
+                                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white focus:border-purple-500"
+                                          />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="text-[10px] text-zinc-500 font-bold uppercase block">Overlay Timer (sec)</label>
+                                          <input
+                                            type="number"
+                                            required
+                                            min="1"
+                                            value={editQForm.timer_duration || 15}
+                                            onChange={(e) => setEditQForm({ ...editQForm, timer_duration: Number(e.target.value) })}
+                                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white focus:border-purple-500"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      {/* Option choices */}
+                                      <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+                                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Choices & Dimension Weight Mappings</span>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {editQForm.options.map((opt: any, oIdx: number) => {
+                                            const dimensionsList = [
+                                              'The Builder', 'The Thinker', 'The Creator',
+                                              'The Connector', 'The Leader', 'The Organizer'
+                                            ];
+                                            const activeDims = (opt.target_dimension || '').split(',').map((d: any) => d.trim()).filter(Boolean);
+
+                                            return (
+                                              <div key={oIdx} className="p-3.5 rounded-xl bg-zinc-950/65 border border-zinc-850 space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                  <span className="text-[10px] font-extrabold text-teal-400">Choice Option {opt.option_letter}</span>
+                                                </div>
+                                                <input
+                                                  type="text"
+                                                  required
+                                                  placeholder="Choice text"
+                                                  value={opt.option_text}
+                                                  onChange={(e) => {
+                                                    const copy = [...editQForm.options];
+                                                    copy[oIdx] = { ...copy[oIdx], option_text: e.target.value };
+                                                    setEditQForm({ ...editQForm, options: copy });
+                                                  }}
+                                                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg py-1.5 px-3 text-xs focus:outline-none text-white focus:border-teal-500"
+                                                />
+                                                {/* Dimension weights and toggle buttons */}
+                                                <div className="space-y-2">
+                                                  <div className="flex justify-between items-center text-[8px] text-zinc-500">
+                                                    <span className="font-bold uppercase tracking-wider">Target Dimension</span>
+                                                    <div className="flex items-center gap-1">
+                                                      <span>Weight:</span>
+                                                      <input
+                                                        type="number"
+                                                        step="0.05"
+                                                        min="0.0"
+                                                        max="1.0"
+                                                        value={opt.intensity_weight}
+                                                        onChange={(e) => {
+                                                          const copy = [...editQForm.options];
+                                                          copy[oIdx] = { ...copy[oIdx], intensity_weight: parseFloat(e.target.value) || 0.8 };
+                                                          setEditQForm({ ...editQForm, options: copy });
+                                                        }}
+                                                        className="w-10 bg-zinc-900 border border-zinc-800 rounded px-1 py-0.5 text-[8px] text-center text-white focus:outline-none focus:border-teal-500 font-mono"
+                                                      />
+                                                    </div>
+                                                  </div>
+                                                  <div className="grid grid-cols-3 gap-1">
+                                                    {dimensionsList.map((dimName) => {
+                                                      const isActive = activeDims.includes(dimName);
+                                                      return (
+                                                        <button
+                                                          key={dimName}
+                                                          type="button"
+                                                          onClick={() => {
+                                                            const newDims = isActive
+                                                              ? activeDims.filter((d: any) => d !== dimName)
+                                                              : [...activeDims, dimName];
+                                                            const copy = [...editQForm.options];
+                                                            copy[oIdx] = { ...copy[oIdx], target_dimension: newDims.join(', ') };
+                                                            setEditQForm({ ...editQForm, options: copy });
+                                                          }}
+                                                          className={`py-1 px-1.5 rounded text-[8px] font-bold transition-all border ${
+                                                            isActive
+                                                              ? 'bg-teal-500/10 border-teal-500/30 text-teal-400'
+                                                              : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700 text-zinc-500 hover:text-zinc-300'
+                                                          }`}
+                                                        >
+                                                          {dimName.replace('The ', '')}
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+
+                                      {/* Form Actions */}
+                                      <div className="flex justify-end gap-2 pt-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingQuestionId(null);
+                                            setEditQForm(null);
+                                          }}
+                                          className="px-3 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleInlineSaveQuestion(scen.id)}
+                                          className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-all text-xs font-bold"
+                                        >
+                                          Save Changes
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
                                 return (
                                   <div key={q.id || qIdx} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-2">
                                     <div className="flex flex-wrap justify-between items-center text-[10px] text-zinc-500 gap-2">
@@ -2875,6 +3067,17 @@ export default function AdminConsole() {
                                         </span>
                                         <span className="font-bold text-amber-500">Trigger: {q.show_at_seconds || 5}s</span>
                                         <span className="font-bold text-teal-400">Timer: {q.timer_duration || 15}s</span>
+                                        <button
+                                          onClick={() => {
+                                            setEditingQuestionId(q.id);
+                                            setEditQForm(JSON.parse(JSON.stringify(q)));
+                                          }}
+                                          className="p-1 px-2 rounded bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 text-purple-400 hover:text-purple-300 transition-all font-bold flex items-center gap-1 text-[8px] uppercase tracking-wider"
+                                          title="Edit Question Inline"
+                                        >
+                                          <Pencil className="w-2.5 h-2.5 text-purple-400" />
+                                          <span>Edit</span>
+                                        </button>
                                       </div>
                                     </div>
                                     <p className="text-xs text-zinc-200 font-semibold">{q.question_text}</p>
