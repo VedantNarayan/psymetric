@@ -14,6 +14,7 @@ export interface Question {
   sequence_order: number;
   question_text: string;
   show_at_seconds?: number;
+  timer_duration?: number;
   options: Option[];
 }
 

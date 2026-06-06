@@ -222,6 +222,7 @@ export default function AdminConsole() {
     {
       question_text: '',
       show_at_seconds: 5,
+      timer_duration: 15,
       options: [
         { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
         { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -243,6 +244,14 @@ export default function AdminConsole() {
     setQSetQuestions(prev => {
       const copy = [...prev];
       copy[qIdx] = { ...copy[qIdx], show_at_seconds: val };
+      return copy;
+    });
+  };
+
+  const handleQuestionTimerChange = (qIdx: number, val: number) => {
+    setQSetQuestions(prev => {
+      const copy = [...prev];
+      copy[qIdx] = { ...copy[qIdx], timer_duration: val };
       return copy;
     });
   };
@@ -305,6 +314,7 @@ export default function AdminConsole() {
       {
         question_text: '',
         show_at_seconds: 5,
+        timer_duration: 15,
         options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -565,6 +575,7 @@ export default function AdminConsole() {
           return {
             ...q,
             id: qId,
+            timer_duration: q.timer_duration || 15,
             options
           };
         });
@@ -990,6 +1001,7 @@ export default function AdminConsole() {
               sequence_order: q.sequence_order,
               question_text: q.question_text,
               show_at_seconds: q.show_at_seconds || 0,
+              timer_duration: q.timer_duration || 15,
               options: (q.options || []).map((o: any) => ({
                 id: o.id,
                 option_letter: o.option_letter,
@@ -1097,6 +1109,7 @@ export default function AdminConsole() {
           id: q.id,
           question_text: q.question_text,
           show_at_seconds: q.show_at_seconds || 5,
+          timer_duration: q.timer_duration || 15,
           options: q.options ? JSON.parse(JSON.stringify(q.options)) : [
             { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
             { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -1111,6 +1124,7 @@ export default function AdminConsole() {
       {
         question_text: '',
         show_at_seconds: 5,
+        timer_duration: 15,
         options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -1456,6 +1470,7 @@ export default function AdminConsole() {
       {
         question_text: '',
         show_at_seconds: 5,
+        timer_duration: 15,
         options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -1486,6 +1501,7 @@ export default function AdminConsole() {
             sequence_order: qSetSetNumber,
             question_text: q.question_text,
             show_at_seconds: q.show_at_seconds || 0,
+            timer_duration: q.timer_duration || 15,
             options: mappedOptions
           };
         });
@@ -2858,6 +2874,7 @@ export default function AdminConsole() {
                                           Readability: {readability.grade} ({readability.level})
                                         </span>
                                         <span className="font-bold text-amber-500">Trigger: {q.show_at_seconds || 5}s</span>
+                                        <span className="font-bold text-teal-400">Timer: {q.timer_duration || 15}s</span>
                                       </div>
                                     </div>
                                     <p className="text-xs text-zinc-200 font-semibold">{q.question_text}</p>
@@ -4577,7 +4594,7 @@ export default function AdminConsole() {
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="md:col-span-3 space-y-1">
+                        <div className="md:col-span-2 space-y-1">
                           <label className="text-[10px] text-zinc-500 font-bold uppercase block">Question Prompt</label>
                           <input 
                             type="text"
@@ -4596,6 +4613,18 @@ export default function AdminConsole() {
                             min="0"
                             value={q.show_at_seconds}
                             onChange={(e) => handleQuestionSecondsChange(qIdx, Number(e.target.value))}
+                            className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-zinc-500 font-bold uppercase block">Overlay Timer (sec)</label>
+                          <input 
+                            type="number"
+                            required
+                            min="1"
+                            placeholder="15"
+                            value={q.timer_duration || 15}
+                            onChange={(e) => handleQuestionTimerChange(qIdx, Number(e.target.value))}
                             className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
                           />
                         </div>
@@ -4747,7 +4776,7 @@ export default function AdminConsole() {
                         <div key={q.id || qIdx} className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-xl space-y-1">
                           <div className="flex justify-between text-[8px] text-zinc-500 font-bold">
                             <span>Question #{qIdx + 1}</span>
-                            <span>Trigger: {q.show_at_seconds || 5}s</span>
+                            <span>Trigger: {q.show_at_seconds || 5}s • Timer: {q.timer_duration || 15}s</span>
                           </div>
                           <p className="text-[11px] text-zinc-200 font-medium line-clamp-2">{q.question_text}</p>
                         </div>

@@ -15,6 +15,7 @@ interface Question {
   id: string;
   question_text: string;
   sequence_order: number;
+  timer_duration?: number;
   options: {
     id: string;
     option_letter: string;
@@ -70,7 +71,7 @@ export default function AssessmentWorkspace() {
   const hasTriggeredRef = useRef(false);
 
   // Timer States
-  const [timeLeft, setTimeLeft] = useState(12);
+  const [timeLeft, setTimeLeft] = useState(15);
   const [isExpired, setIsExpired] = useState(false);
 
   // Check authentication & initialize session
@@ -442,7 +443,8 @@ export default function AssessmentWorkspace() {
   useEffect(() => {
     if (!showOverlay || !currentQuestion || isCompleted || animatingExit) return;
 
-    setTimeLeft(12);
+    const totalDuration = currentQuestion.timer_duration || 15;
+    setTimeLeft(totalDuration);
     setIsExpired(false);
 
     const interval = setInterval(() => {
@@ -464,10 +466,12 @@ export default function AssessmentWorkspace() {
     setIsExpired(true);
     playChimeSound('error');
 
+    const totalDuration = currentQuestion?.timer_duration || 15;
+
     // Start loading the next item immediately in parallel with the exit delay/shake animations
     const loadPromise = (async () => {
       if (sessionId && currentQuestion) {
-        return loadNextItem(sessionId, currentQuestion.id, null, 12000);
+        return loadNextItem(sessionId, currentQuestion.id, null, totalDuration * 1000);
       }
     })();
 
@@ -1133,55 +1137,62 @@ export default function AssessmentWorkspace() {
                         <Clock className="w-3.5 h-3.5 text-zinc-400" /> Loop {progress.answered_scenarios + 1}
                       </span>
 
-                      {/* 12-second countdown watch timer */}
-                      <motion.div
-                        animate={timeLeft <= 4 ? {
-                          x: [0, -3, 3, -3, 3, 0],
-                          scale: [1, 1.05, 1, 1.05, 1],
-                          transition: { repeat: Infinity, duration: 0.4 }
-                        } : {}}
-                        className="relative flex items-center justify-center shrink-0"
-                      >
-                        <svg className="w-12 h-12 transform -rotate-90">
-                          {/* Background Track Circle */}
-                          <circle
-                            cx="24"
-                            cy="24"
-                            r="20"
-                            className="stroke-zinc-800 fill-none"
-                            strokeWidth="2.5"
-                          />
-                          {/* Sweep Circle */}
-                          <motion.circle
-                            cx="24"
-                            cy="24"
-                            r="20"
-                            className={`fill-none transition-colors duration-300 ${
-                              timeLeft >= 8
-                                ? 'stroke-teal-400 drop-shadow-[0_0_4px_rgba(0,245,212,0.4)]'
-                                : timeLeft >= 5
-                                ? 'stroke-amber-400 drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]'
-                                : 'stroke-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.5)]'
+                      {/* Dynamic countdown watch timer */}
+                      {(() => {
+                        const totalDuration = currentQuestion?.timer_duration || 15;
+                        const warnLimit = Math.ceil(totalDuration * 0.5);
+                        const criticalLimit = Math.ceil(totalDuration * 0.25);
+                        return (
+                          <motion.div
+                            animate={timeLeft <= criticalLimit ? {
+                              x: [0, -3, 3, -3, 3, 0],
+                              scale: [1, 1.05, 1, 1.05, 1],
+                              transition: { repeat: Infinity, duration: 0.4 }
+                            } : {}}
+                            className="relative flex items-center justify-center shrink-0"
+                          >
+                            <svg className="w-12 h-12 transform -rotate-90">
+                              {/* Background Track Circle */}
+                              <circle
+                                cx="24"
+                                cy="24"
+                                r="20"
+                                className="stroke-zinc-800 fill-none"
+                                strokeWidth="2.5"
+                              />
+                              {/* Sweep Circle */}
+                              <motion.circle
+                                cx="24"
+                                cy="24"
+                                r="20"
+                                className={`fill-none transition-colors duration-300 ${
+                                  timeLeft > warnLimit
+                                    ? 'stroke-teal-400 drop-shadow-[0_0_4px_rgba(0,245,212,0.4)]'
+                                    : timeLeft > criticalLimit
+                                    ? 'stroke-amber-400 drop-shadow-[0_0_4px_rgba(245,158,11,0.4)]'
+                                    : 'stroke-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.5)]'
+                                }`}
+                                strokeWidth="2.5"
+                                strokeDasharray="125.66"
+                                animate={{ strokeDashoffset: (((totalDuration - timeLeft) / totalDuration) * 125.66) }}
+                                transition={{ duration: 1, ease: 'linear' }}
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                            {/* Countdown seconds displayed in the middle */}
+                            <div className={`absolute font-mono font-extrabold text-sm tracking-normal transition-colors duration-300 ${
+                              timeLeft > warnLimit
+                                ? 'text-teal-400'
+                                : timeLeft > criticalLimit
+                                ? 'text-amber-400'
+                                : 'text-red-500 animate-pulse'
                             }`}
-                            strokeWidth="2.5"
-                            strokeDasharray="125.66"
-                            animate={{ strokeDashoffset: ((12 - timeLeft) / 12) * 125.66 }}
-                            transition={{ duration: 1, ease: 'linear' }}
-                            strokeLinecap="round"
-                          />
-                        </svg>
-                        {/* Countdown seconds displayed in the middle */}
-                        <div className={`absolute font-mono font-extrabold text-sm tracking-normal transition-colors duration-300 ${
-                          timeLeft >= 8
-                            ? 'text-teal-400'
-                            : timeLeft >= 5
-                            ? 'text-amber-400'
-                            : 'text-red-500 animate-pulse'
-                        }`}
-                        style={{ fontFeatureSettings: '"tnum"' }}>
-                          {timeLeft}
-                        </div>
-                      </motion.div>
+                            style={{ fontFeatureSettings: '"tnum"' }}>
+                              {timeLeft}
+                            </div>
+                          </motion.div>
+                        );
+                      })()}
 
                       <span className="shrink-0 text-right">Scenario {progress.answered_scenarios + 1} of {progress.total_scenarios}</span>
                     </div>

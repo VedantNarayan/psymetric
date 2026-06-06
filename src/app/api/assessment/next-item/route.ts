@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       .select(`
         id, title, video_url, is_backup, target_age_group,
         questions (
-          id, sequence_order, question_text, show_at_seconds,
+          id, sequence_order, question_text, show_at_seconds, timer_duration,
           options (
             id, option_letter, option_text
           )
@@ -359,6 +359,7 @@ export async function POST(req: NextRequest) {
       question_text: nextQuestion.question_text,
       sequence_order: nextQuestion.sequence_order,
       show_at_seconds: nextQuestion.show_at_seconds || 0,
+      timer_duration: nextQuestion.timer_duration || 15,
       options: sortedOptions.map((opt: any) => ({
         id: opt.id,
         option_letter: opt.option_letter,
@@ -634,6 +635,7 @@ function handleInMemoryFallback(
       question_text: nextQuestion.question_text,
       sequence_order: nextQuestion.sequence_order,
       show_at_seconds: nextQuestion.show_at_seconds || 6,
+      timer_duration: nextQuestion.timer_duration || 15,
       options: nextQuestion.options.map(opt => ({
         id: opt.id,
         option_letter: opt.option_letter,
