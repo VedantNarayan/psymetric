@@ -9,17 +9,17 @@ async function assertSuperAdmin(request: Request) {
   }
 
   const token = authHeader.replace('Bearer ', '');
-  const clientSupabase = createServerSupabase(); // Initialize without header to avoid conflicts
   
-  // Set the session explicitly so that all subsequent DB/Postgrest requests are authenticated
-  const { data: { user }, error: sessionError } = await clientSupabase.auth.setSession({
-    access_token: token,
-    refresh_token: ''
-  });
+  // 1. Verify the JWT token by calling getUser with the token directly
+  const verifyClient = createServerSupabase();
+  const { data: { user }, error: userError } = await verifyClient.auth.getUser(token);
 
-  if (sessionError || !user) {
-    throw new Error(`Invalid user token: ${sessionError?.message || 'No user found'}`);
+  if (userError || !user) {
+    throw new Error(`Invalid user token: ${userError?.message || 'No user found'}`);
   }
+
+  // 2. Create an authenticated client that passes the Bearer token for RLS-protected queries
+  const clientSupabase = createServerSupabase(authHeader);
 
   // Query database profiles securely using the verified user token client
   const { data: profile, error: profileError } = await clientSupabase
