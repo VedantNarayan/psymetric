@@ -422,16 +422,69 @@ export default function AdminConsole() {
     downloadAnchor.remove();
   };
 
+  const syncBulkScenariosToSupabase = async (parsed: any[]) => {
+    alert("Applying scenario matrix updates to Supabase... Please wait.");
+    try {
+      // 1. Assign IDs to scenarios, questions, options if missing
+      for (const s of parsed) {
+        if (!s.id || s.id.length < 10) s.id = generateUUID();
+        if (s.questions) {
+          s.questions.forEach((q: any) => {
+            if (!q.id || q.id.length < 10) q.id = generateUUID();
+            if (q.options) {
+              q.options.forEach((o: any) => {
+                if (!o.id || o.id.length < 10) o.id = generateUUID();
+              });
+            }
+          });
+        }
+      }
+
+      // 2. Delete any scenarios in the database that are NOT in our imported JSON list
+      const importedIds = parsed.map((s: any) => s.id);
+      if (importedIds.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('scenarios')
+          .delete()
+          .not('id', 'in', `(${importedIds.join(',')})`);
+        if (deleteError) throw deleteError;
+      } else {
+        const { error: deleteError } = await supabase
+          .from('scenarios')
+          .delete()
+          .neq('id', '00000000-0000-0000-0000-000000000000');
+        if (deleteError) throw deleteError;
+      }
+
+      // 3. Upsert scenarios one by one
+      for (const s of parsed) {
+        await syncScenarioToSupabase(s.id, parsed);
+      }
+
+      // 4. Update state variables
+      setScenarios(parsed);
+      setBulkJsonText(JSON.stringify(parsed, null, 2));
+      setBulkJsonError(null);
+      alert("Successfully applied and synchronized all scenarios to Supabase!");
+      return true;
+    } catch (err: any) {
+      console.error('Error in syncBulkScenariosToSupabase:', err);
+      alert("Error syncing bulk changes to Supabase: " + err.message);
+      return false;
+    }
+  };
+
   const handleImportScenarios = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
-        const parsed = JSON.parse(event.target?.result as string);
+        const text = event.target?.result as string;
+        const parsed = JSON.parse(text);
         if (Array.isArray(parsed)) {
-          if (confirm(`Are you sure you want to import ${parsed.length} scenarios? This will override current session scenarios.`)) {
-            setScenarios(parsed);
+          if (confirm(`Are you sure you want to import ${parsed.length} scenarios? This will replace your diagnostic scenario bank in bulk and sync it to Supabase.`)) {
+            await syncBulkScenariosToSupabase(parsed);
           }
         } else {
           alert("Invalid scenario schema. Must be a JSON array of scenarios.");
@@ -1090,32 +1143,7 @@ export default function AdminConsole() {
   const handleApplyBulkChanges = async () => {
     if (handleValidateBulkJson(bulkJsonText)) {
       const parsedScenarios = JSON.parse(bulkJsonText);
-      setScenarios(parsedScenarios);
-      
-      alert("Applying scenario matrix updates... Please wait.");
-      try {
-        for (const s of parsedScenarios) {
-          const scenId = s.id && s.id.length > 10 ? s.id : generateUUID();
-          s.id = scenId;
-          
-          if (s.questions) {
-            s.questions.forEach((q: any) => {
-              if (!q.id || q.id.length < 10) q.id = generateUUID();
-              if (q.options) {
-                q.options.forEach((o: any) => {
-                  if (!o.id || o.id.length < 10) o.id = generateUUID();
-                });
-              }
-            });
-          }
-          
-          const updatedList = parsedScenarios.map((item: any) => item.id === scenId ? s : item);
-          await syncScenarioToSupabase(scenId, updatedList);
-        }
-        alert("Successfully applied scenario matrix updates from raw JSON schema and saved to Supabase!");
-      } catch (err: any) {
-        alert("Error syncing bulk changes to Supabase: " + err.message);
-      }
+      await syncBulkScenariosToSupabase(parsedScenarios);
     } else {
       alert("Cannot apply changes. Please fix the validation errors first.");
     }
