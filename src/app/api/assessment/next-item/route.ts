@@ -20,16 +20,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing session_id' }, { status: 400 });
     }
 
-    // Attempt database check
+    // ─── PARALLEL DATABASE FETCH (ROUNDTRIP 1) ───
+    let defaultTimer = 15;
+    let session: any = null;
+    let scenarios: any[] = [];
+    let responses: any[] = [];
+
     try {
-      // Run a lightweight probe to see if Supabase DB is online
-      const { error: probeError } = await supabase.from('scenarios').select('id').limit(1);
-      if (probeError) {
-        throw new Error('Database offline or unmigrated');
+      const [settingsRes, sessionRes, scenariosRes, responsesRes] = await Promise.all([
+        supabase.from('system_settings').select('value').eq('key', 'default_overlay_timer').single(),
+        supabase.from('assessment_sessions').select('*').eq('id', session_id).single(),
+        supabase.from('scenarios').select(`
+          id, title, video_url, is_backup, target_age_group,
+          questions (
+            id, sequence_order, question_text, show_at_seconds, timer_duration,
+            options (
+              id, option_letter, option_text
+            )
+          )
+        `).eq('is_active', true),
+        supabase.from('candidate_responses').select('question_id, response_time_ms').eq('session_id', session_id)
+      ]);
+
+      if (sessionRes.error) throw sessionRes.error;
+      if (scenariosRes.error) throw scenariosRes.error;
+      
+      session = sessionRes.data;
+      scenarios = scenariosRes.data;
+      responses = responsesRes.data || [];
+      if (settingsRes.data && settingsRes.data.value) {
+        defaultTimer = Number(settingsRes.data.value);
       }
     } catch (dbErr) {
       isDatabaseOffline = true;
-      console.warn('Database is offline, routing through in-memory fallback engine.');
+      console.warn('Database is offline, routing through in-memory fallback engine:', dbErr);
     }
 
     // ─── IF DATABASE IS OFFLINE, RUN IN-MEMORY ENGINE ───
@@ -37,30 +61,7 @@ export async function POST(req: NextRequest) {
       return handleInMemoryFallback(session_id, question_id, selected_option_id, response_time_ms);
     }
 
-    // ─── STANDARD DATABASE CODE ───
-    let defaultTimer = 15;
-    try {
-      const { data: timerSetting } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'default_overlay_timer')
-        .single();
-      if (timerSetting && timerSetting.value) {
-        defaultTimer = Number(timerSetting.value);
-      }
-    } catch (e) {
-      console.warn('Failed to fetch default overlay timer from settings table:', e);
-    }
-    
-    // Fetch the session first (always needed)
-    const { data: session, error: sessionError } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('id', session_id)
-      .single();
-
-    if (sessionError || !session) {
-      console.error('Error fetching assessment session:', sessionError);
+    if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
@@ -100,17 +101,20 @@ export async function POST(req: NextRequest) {
       }
 
       thetaVector.set_number = set_number;
-      await supabase
-        .from('assessment_sessions')
-        .update({ theta_vector: thetaVector })
-        .eq('id', session_id);
     }
 
-    // 1. Record Response & Update Profile Vector
+    if (!thetaVector.counts) {
+      thetaVector.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
+    }
+
+    let is_extended = session.is_extended;
+    let total_extended_scenarios = session.total_extended_scenarios || 0;
+
+    // ─── RECORD RESPONSE & UPDATE PROFILE VECTOR (ROUNDTRIP 2) ───
     if (question_id) {
       const timeMs = Number(response_time_ms) || 0;
 
-      const { error: responseError } = await supabase
+      const insertPromise = supabase
         .from('candidate_responses')
         .insert({
           session_id,
@@ -119,22 +123,28 @@ export async function POST(req: NextRequest) {
           response_time_ms: timeMs
         });
 
-      if (responseError && responseError.code !== '23505') {
-        console.error('Error inserting candidate response:', responseError);
+      const optionPromise = selected_option_id
+        ? supabase
+            .from('options')
+            .select('target_dimension, intensity_weight')
+            .eq('id', selected_option_id)
+            .single()
+        : Promise.resolve({ data: null, error: null } as any);
+
+      const [insertRes, optionRes] = await Promise.all([insertPromise, optionPromise]);
+
+      if (insertRes.error && insertRes.error.code !== '23505') {
+        console.error('Error inserting candidate response:', insertRes.error);
         return NextResponse.json({ error: 'Failed to record response' }, { status: 500 });
       }
 
       if (selected_option_id) {
-        const { data: option, error: optionError } = await supabase
-          .from('options')
-          .select('target_dimension, intensity_weight')
-          .eq('id', selected_option_id)
-          .single();
-
-        if (optionError || !option) {
-          console.error('Error fetching selected option details:', optionError);
+        const option = optionRes.data;
+        if (optionRes.error || !option) {
+          console.error('Error fetching selected option details:', optionRes.error);
           return NextResponse.json({ error: 'Selected option not found' }, { status: 404 });
         }
+
         const dimensionMap: Record<string, string> = {
           'Realistic': 'R',
           'The Builder': 'R',
@@ -155,66 +165,23 @@ export async function POST(req: NextRequest) {
           .map((s: string) => s.trim())
           .filter(Boolean);
 
-        if (!thetaVector.counts) {
-          thetaVector.counts = { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
-        }
-
-        let updated = false;
         for (const rawDim of dimensions) {
           const dimLetter = dimensionMap[rawDim];
           if (dimLetter) {
             thetaVector[dimLetter] = (thetaVector[dimLetter] || 0) + option.intensity_weight;
             thetaVector.counts[dimLetter] = (thetaVector.counts[dimLetter] || 0) + 1;
-            updated = true;
           }
-        }
-
-        if (updated) {
-          await supabase
-            .from('assessment_sessions')
-            .update({ theta_vector: thetaVector })
-            .eq('id', session_id);
         }
       } else {
         // Unanswered: extend test session dynamically to serve replacement items
-        await supabase
-          .from('assessment_sessions')
-          .update({
-            is_extended: true,
-            total_extended_scenarios: (session.total_extended_scenarios || 0) + 1
-          })
-          .eq('id', session_id);
+        is_extended = true;
+        total_extended_scenarios = total_extended_scenarios + 1;
       }
-    }
 
-    // Fetch all active scenarios
-    const { data: scenarios, error: scenariosError } = await supabase
-      .from('scenarios')
-      .select(`
-        id, title, video_url, is_backup, target_age_group,
-        questions (
-          id, sequence_order, question_text, show_at_seconds, timer_duration,
-          options (
-            id, option_letter, option_text
-          )
-        )
-      `)
-      .eq('is_active', true);
-
-    if (scenariosError || !scenarios) {
-      console.error('Error fetching scenarios:', scenariosError);
-      return NextResponse.json({ error: 'Failed to fetch scenarios' }, { status: 500 });
-    }
-
-    // Fetch all candidate responses
-    const { data: responses, error: responsesError } = await supabase
-      .from('candidate_responses')
-      .select('question_id, response_time_ms')
-      .eq('session_id', session_id);
-
-    if (responsesError) {
-      console.error('Error fetching responses:', responsesError);
-      return NextResponse.json({ error: 'Failed to fetch responses' }, { status: 500 });
+      responses.push({
+        question_id,
+        response_time_ms: timeMs
+      });
     }
 
     const answeredQuestionIds = new Set(responses.map(r => r.question_id));
@@ -247,19 +214,9 @@ export async function POST(req: NextRequest) {
     const completedBackupScenarios = scenarioQuestionStatus.filter(s => s.is_backup && s.isCompleted);
     const completedScenariosCount = completedBaselineScenarios.length + completedBackupScenarios.length;
 
-    // Fetch session parameters
-    const { data: currentSession, error: sessionFetchError } = await supabase
-      .from('assessment_sessions')
-      .select('*')
-      .eq('id', session_id)
-      .single();
-
-    if (sessionFetchError || !currentSession) {
-      console.error('Error fetching session:', sessionFetchError);
-      return NextResponse.json({ error: 'Session not found' }, { status: 404 });
-    }
-
-    let { is_cheat_flagged, cheat_reason, is_extended, total_extended_scenarios, is_completed } = currentSession;
+    let is_cheat_flagged = session.is_cheat_flagged;
+    let cheat_reason = session.cheat_reason;
+    let is_completed = session.is_completed;
 
     // Trigger Data Integrity Engine (At 12 completed scenarios)
     if (completedScenariosCount === 12 && !is_completed && !is_extended) {
@@ -267,16 +224,13 @@ export async function POST(req: NextRequest) {
       const speedClickRatio = responses.length > 0 ? speedClicksCount / responses.length : 0;
       const speedClickFlag = speedClickRatio > 0.30;
 
-      const theta = currentSession.theta_vector || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0, counts: { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 } };
-      const counts = theta.counts || { R: 0, I: 0, A: 0, S: 0, E: 0, C: 0 };
-      
       const avg = (val: number, count: number) => count > 0 ? val / count : 0;
-      const avgR = avg(theta.R || 0, counts.R || 0);
-      const avgS = avg(theta.S || 0, counts.S || 0);
-      const avgI = avg(theta.I || 0, counts.I || 0);
-      const avgE = avg(theta.E || 0, counts.E || 0);
-      const avgA = avg(theta.A || 0, counts.A || 0);
-      const avgC = avg(theta.C || 0, counts.C || 0);
+      const avgR = avg(thetaVector.R || 0, thetaVector.counts.R || 0);
+      const avgS = avg(thetaVector.S || 0, thetaVector.counts.S || 0);
+      const avgI = avg(thetaVector.I || 0, thetaVector.counts.I || 0);
+      const avgE = avg(thetaVector.E || 0, thetaVector.counts.E || 0);
+      const avgA = avg(thetaVector.A || 0, thetaVector.counts.A || 0);
+      const avgC = avg(thetaVector.C || 0, thetaVector.counts.C || 0);
 
       const contradictionRS = avgR > 0.55 && avgS > 0.55;
       const contradictionIE = avgI > 0.55 && avgE > 0.55;
@@ -313,26 +267,43 @@ export async function POST(req: NextRequest) {
         dynamicExtendedCount += contradictionCount;
         
         total_extended_scenarios = Math.max(3, Math.min(6, dynamicExtendedCount));
-
-        await supabase
-          .from('assessment_sessions')
-          .update({
-            is_cheat_flagged: true,
-            cheat_reason: cheat_reason,
-            is_extended: true,
-            total_extended_scenarios: total_extended_scenarios
-          })
-          .eq('id', session_id);
       }
     }
 
     const targetScenariosCount = is_extended ? (12 + total_extended_scenarios) : 12;
     if (completedScenariosCount >= targetScenariosCount || completedScenariosCount >= 18) {
+      is_completed = true;
+    }
+
+    // ─── BATCHED STATE SYNC TO DB (ROUNDTRIP 3) ───
+    const sessionUpdates: any = {};
+    if (JSON.stringify(session.theta_vector) !== JSON.stringify(thetaVector)) {
+      sessionUpdates.theta_vector = thetaVector;
+    }
+    if (session.is_extended !== is_extended) {
+      sessionUpdates.is_extended = is_extended;
+    }
+    if (session.total_extended_scenarios !== total_extended_scenarios) {
+      sessionUpdates.total_extended_scenarios = total_extended_scenarios;
+    }
+    if (session.is_cheat_flagged !== is_cheat_flagged) {
+      sessionUpdates.is_cheat_flagged = is_cheat_flagged;
+    }
+    if (session.cheat_reason !== cheat_reason) {
+      sessionUpdates.cheat_reason = cheat_reason;
+    }
+    if (session.is_completed !== is_completed) {
+      sessionUpdates.is_completed = is_completed;
+    }
+
+    if (Object.keys(sessionUpdates).length > 0) {
       await supabase
         .from('assessment_sessions')
-        .update({ is_completed: true })
+        .update(sessionUpdates)
         .eq('id', session_id);
+    }
 
+    if (is_completed) {
       return NextResponse.json({
         is_completed: true,
         is_cheat_flagged,
@@ -364,10 +335,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (!nextScenario || !nextQuestion) {
-      await supabase
-        .from('assessment_sessions')
-        .update({ is_completed: true })
-        .eq('id', session_id);
+      if (!is_completed) {
+        await supabase
+          .from('assessment_sessions')
+          .update({ is_completed: true })
+          .eq('id', session_id);
+      }
 
       return NextResponse.json({
         is_completed: true,

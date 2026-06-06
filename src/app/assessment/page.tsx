@@ -442,9 +442,10 @@ export default function AssessmentWorkspace() {
       }
     })();
 
-    // Wait for the button pulse animation before rotating the card out
+    // Wait for the button pulse animation before rotating the card out and sliding out the overlay
     setTimeout(() => {
       setAnimatingExit(true);
+      setShowOverlay(false);
       
       // Complete card Z-axis rotate transition
       setTimeout(async () => {
@@ -492,6 +493,7 @@ export default function AssessmentWorkspace() {
 
     setTimeout(() => {
       setAnimatingExit(true);
+      setShowOverlay(false);
       setTimeout(async () => {
         await loadPromise;
         setAnimatingExit(false);
