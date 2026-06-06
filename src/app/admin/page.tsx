@@ -434,7 +434,7 @@ export default function AdminConsole() {
     downloadAnchor.remove();
   };
 
-  const syncBulkScenariosToSupabase = async (parsed: any[]) => {
+  const syncBulkScenariosToSupabase = async (parsed: any[], description?: string) => {
     alert("Applying scenario matrix updates to Supabase... Please wait.");
     try {
       // 1. Assign IDs to scenarios, questions, options if missing
@@ -473,11 +473,31 @@ export default function AdminConsole() {
         await syncScenarioToSupabase(s.id, parsed);
       }
 
-      // 4. Update state variables
+      // 4. Automatically create a version commit for bulk upload
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      const commitHash = Math.random().toString(36).substring(2, 8);
+      
+      const { error: commitError } = await supabase
+        .from('scenario_commits')
+        .insert({
+          commit_hash: commitHash,
+          description: description || `Auto-Commit: Bulk sync of ${parsed.length} scenarios`,
+          scenarios_snapshot: parsed,
+          created_by: user?.id || null
+        });
+
+      if (commitError) {
+        console.error("Error creating auto-commit:", commitError);
+      } else {
+        await fetchVersionsAndBackups();
+      }
+
+      // 5. Update state variables
       setScenarios(parsed);
       setBulkJsonText(JSON.stringify(parsed, null, 2));
       setBulkJsonError(null);
-      alert("Successfully applied and synchronized all scenarios to Supabase!");
+      alert(`Successfully applied and synchronized all scenarios to Supabase! (Created Auto-Commit [${commitHash}])`);
       return true;
     } catch (err: any) {
       console.error('Error in syncBulkScenariosToSupabase:', err);
@@ -783,6 +803,7 @@ export default function AdminConsole() {
       }
     } catch (err) {
       console.error('Error syncing scenario to Supabase:', err);
+      throw err;
     }
   };
 
@@ -1124,7 +1145,7 @@ export default function AdminConsole() {
     setIsScenarioModalOpen(true);
   };
 
-  const handleSaveScenario = (e: React.FormEvent) => {
+  const handleSaveScenario = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!scenarioTitle.trim() || !scenarioVideoUrl.trim()) return;
 
@@ -1163,7 +1184,11 @@ export default function AdminConsole() {
     }
     
     // Sync to Supabase
-    syncScenarioToSupabase(targetScenId, updatedList);
+    try {
+      await syncScenarioToSupabase(targetScenId, updatedList);
+    } catch (err: any) {
+      alert("Failed to sync scenario changes: " + err.message);
+    }
     setIsScenarioModalOpen(false);
   };
 
@@ -1243,7 +1268,7 @@ export default function AdminConsole() {
     }
   };
 
-  const handleCloneQuestionSet = (fromScenarioId: string, fromSetNum: number, toScenarioId: string, toSetNum: number) => {
+  const handleCloneQuestionSet = async (fromScenarioId: string, fromSetNum: number, toScenarioId: string, toSetNum: number) => {
     const fromScen = scenarios.find(s => s.id === fromScenarioId);
     if (!fromScen) return;
     const questionsToClone = fromScen.questions 
@@ -1275,12 +1300,16 @@ export default function AdminConsole() {
     });
 
     setScenarios(updatedList);
-    syncScenarioToSupabase(toScenarioId, updatedList);
+    try {
+      await syncScenarioToSupabase(toScenarioId, updatedList);
+      alert(`Successfully cloned questions from Set ${fromSetNum} to Set ${toSetNum}!`);
+    } catch (err: any) {
+      alert("Failed to clone questions in database: " + err.message);
+    }
     setSelectedMatrixCell(null);
-    alert(`Successfully cloned questions from Set ${fromSetNum} to Set ${toSetNum}!`);
   };
 
-  const handleClearQuestionSet = (scenarioId: string, setNum: number) => {
+  const handleClearQuestionSet = async (scenarioId: string, setNum: number) => {
     if (confirm(`Are you sure you want to clear all questions in Set ${setNum} for this scenario?`)) {
       const updatedList = scenarios.map(s => {
         if (s.id === scenarioId) {
@@ -1290,7 +1319,11 @@ export default function AdminConsole() {
         return s;
       });
       setScenarios(updatedList);
-      syncScenarioToSupabase(scenarioId, updatedList);
+      try {
+        await syncScenarioToSupabase(scenarioId, updatedList);
+      } catch (err: any) {
+        alert("Failed to clear questions in database: " + err.message);
+      }
       setSelectedMatrixCell(null);
     }
   };
@@ -1400,7 +1433,7 @@ export default function AdminConsole() {
     setIsQuestionSetModalOpen(true);
   };
 
-  const handleSaveQuestionSet = (e: React.FormEvent) => {
+  const handleSaveQuestionSet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qSetSelectedScenarioId) return;
 
@@ -1437,7 +1470,11 @@ export default function AdminConsole() {
 
     setScenarios(updatedList);
     if (updatedScen) {
-      syncScenarioToSupabase(qSetSelectedScenarioId, updatedList);
+      try {
+        await syncScenarioToSupabase(qSetSelectedScenarioId, updatedList);
+      } catch (err: any) {
+        alert("Failed to save question set changes in database: " + err.message);
+      }
     }
     setIsQuestionSetModalOpen(false);
   };
