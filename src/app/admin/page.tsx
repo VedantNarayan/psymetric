@@ -7,7 +7,7 @@ import {
   BarChart3, Settings, Video, Upload, Shield, 
   Trash2, Plus, Sparkles, Sliders, Users, 
   Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2, Pencil,
-  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen
+  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen, Archive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fallbackScenarios } from '@/lib/supabase/fallbackData';
@@ -312,7 +312,19 @@ export default function AdminConsole() {
   const [scenarios, setScenarios] = useState<any[]>([]);
 
   // Scenario matrix manager state
-  const [scenActiveView, setScenActiveView] = useState<'grid' | 'matrix' | 'analytics' | 'schema' | 'simulator'>('grid');
+  const [scenActiveView, setScenActiveView] = useState<'grid' | 'matrix' | 'analytics' | 'schema' | 'simulator' | 'versions'>('grid');
+  
+  // Versions & Backups states
+  const [commitsList, setCommitsList] = useState<any[]>([]);
+  const [backupsList, setBackupsList] = useState<any[]>([]);
+  const [archivedResponses, setArchivedResponses] = useState<any[]>([]);
+  const [archiveSearchQuery, setArchiveSearchQuery] = useState<string>('');
+  const [commitDescription, setCommitDescription] = useState<string>('');
+  const [isCommiting, setIsCommiting] = useState<boolean>(false);
+  const [isBackingUp, setIsBackingUp] = useState<boolean>(false);
+  const [isRestoring, setIsRestoring] = useState<boolean>(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [selectedCommitSnapshot, setSelectedCommitSnapshot] = useState<any | null>(null);
   const [scenSearchQuery, setScenSearchQuery] = useState('');
   const [scenAgeFilter, setScenAgeFilter] = useState('All');
   const [scenDimensionFilter, setScenDimensionFilter] = useState('All');
@@ -494,6 +506,199 @@ export default function AdminConsole() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const fetchVersionsAndBackups = async () => {
+    try {
+      const { data: commitsData } = await supabase
+        .from('scenario_commits')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (commitsData) setCommitsList(commitsData);
+
+      const { data: backupsData } = await supabase
+        .from('system_backups')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (backupsData) setBackupsList(backupsData);
+
+      const { data: archiveData } = await supabase
+        .from('archived_candidate_responses')
+        .select('*')
+        .order('archived_at', { ascending: false });
+      if (archiveData) setArchivedResponses(archiveData);
+    } catch (e) {
+      console.error('Error loading commits and backups:', e);
+    }
+  };
+
+  const handleCreateCommit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commitDescription.trim()) return;
+
+    setIsCommiting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) throw new Error('Not authenticated');
+
+      const commitHash = Math.random().toString(36).substring(2, 8); // 6-char short hash
+      const snapshot = scenarios;
+
+      const { error } = await supabase
+        .from('scenario_commits')
+        .insert({
+          commit_hash: commitHash,
+          description: commitDescription.trim(),
+          scenarios_snapshot: snapshot,
+          created_by: user.id
+        });
+
+      if (error) throw error;
+
+      alert(`Successfully created scenario commit [${commitHash}]!`);
+      setCommitDescription('');
+      await fetchVersionsAndBackups();
+    } catch (err: any) {
+      console.error('Error creating scenario commit:', err);
+      alert('Failed to create version commit: ' + err.message);
+    } finally {
+      setIsCommiting(false);
+    }
+  };
+
+  const handleRevertCommit = async (commit: any) => {
+    if (
+      !confirm(
+        `WARNING: Reverting to commit [${commit.commit_hash}] will overwrite your current scenario matrix. If any active questions are deleted, associated student answers will be lost. Do you want to proceed?`
+      )
+    ) {
+      return;
+    }
+
+    setIsRestoring(true);
+    try {
+      const snapshot = commit.scenarios_snapshot;
+      const success = await syncBulkScenariosToSupabase(snapshot);
+      if (success) {
+        alert(`Successfully reverted scenario database to version [${commit.commit_hash}]!`);
+      }
+    } catch (err: any) {
+      console.error('Error reverting commit:', err);
+      alert('Failed to revert: ' + err.message);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleTriggerBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Not authenticated');
+
+      const res = await fetch('/api/admin/backup', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to execute backup');
+
+      alert(`Successfully triggered manual backup [${result.file}]!`);
+      await fetchVersionsAndBackups();
+    } catch (err: any) {
+      console.error('Error triggering manual backup:', err);
+      alert('Backup failed: ' + err.message);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleRestoreBackup = async (backup: any) => {
+    const typedConfirm = prompt(
+      `CRITICAL WARNING: Restoring the system from [${backup.backup_name}] will truncate ALL database tables and insert old records. To prevent mistakes, please type "RESTORE" to confirm.`
+    );
+    if (typedConfirm !== 'RESTORE') {
+      if (typedConfirm !== null) alert('Incorrect confirmation. Restoration aborted.');
+      return;
+    }
+
+    setIsRestoring(true);
+    setRestoringId(backup.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Not authenticated');
+
+      const res = await fetch('/api/admin/backup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ filePath: backup.file_path })
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Restoration failed');
+
+      alert('System successfully restored! Reloading database entries...');
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Restoration error:', err);
+      alert('Restoration failed: ' + err.message);
+    } finally {
+      setIsRestoring(false);
+      setRestoringId(null);
+    }
+  };
+
+  const handleDeleteBackup = async (backup: any) => {
+    if (!confirm(`Are you sure you want to permanently delete backup file [${backup.backup_name}]? This action is irreversible.`)) {
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Not authenticated');
+
+      const res = await fetch('/api/admin/backup', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ id: backup.id, filePath: backup.file_path })
+      });
+
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Deletion failed');
+
+      await fetchVersionsAndBackups();
+    } catch (err: any) {
+      console.error('Delete backup error:', err);
+      alert('Failed to delete backup: ' + err.message);
+    }
+  };
+
+  const handleDeleteArchivedResponse = async (id: string) => {
+    if (!confirm('Are you sure you want to permanently delete this archived response? This action is irreversible.')) return;
+    try {
+      const { error } = await supabase
+        .from('archived_candidate_responses')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      await fetchVersionsAndBackups();
+    } catch (err: any) {
+      console.error('Error deleting archived response:', err);
+      alert('Failed to delete archived response: ' + err.message);
+    }
   };
 
   const handleOpenQuestionSetFromMatrix = (scenarioId: string, setNum: number) => {
@@ -758,6 +963,9 @@ export default function AdminConsole() {
         } else {
           setTeachers([]);
         }
+
+        // 5. Fetch commits and backups
+        await fetchVersionsAndBackups();
 
       } catch (err) {
         console.error('Admin verification error:', err);
@@ -2258,7 +2466,8 @@ export default function AdminConsole() {
                   { id: 'matrix', label: 'Diagnostic Coverage Grid' },
                   { id: 'analytics', label: 'Balance Analytics' },
                   { id: 'simulator', label: 'Simulator Sandbox' },
-                  { id: 'schema', label: 'Bulk Schema Sync' }
+                  { id: 'schema', label: 'Bulk Schema Sync' },
+                  { id: 'versions', label: 'Versions & Backups' }
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -3079,6 +3288,344 @@ export default function AdminConsole() {
                         </div>
                       )}
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* View 6: Versions & Backups */}
+              {scenActiveView === 'versions' && (
+                <div className="space-y-8 text-left max-w-5xl mx-auto">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    
+                    {/* Left Column: Version Control (Git-style) */}
+                    <div className="lg:col-span-7 space-y-6">
+                      <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-5">
+                        <div>
+                          <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                            <Sliders className="w-5 h-5 text-purple-400" /> Scenario Version Ledger
+                          </h3>
+                          <p className="text-xs text-zinc-500 mt-1">Snapshot the active scenario matrix state and roll back to previous versions if needed.</p>
+                        </div>
+
+                        {/* Snapshot active state */}
+                        <form onSubmit={handleCreateCommit} className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-3">
+                          <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Commit Description</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Added CBSE grade-10 science questions..."
+                              value={commitDescription}
+                              onChange={(e) => setCommitDescription(e.target.value)}
+                              className="flex-1 bg-black border border-zinc-850 rounded-xl py-2 px-3 text-xs focus:outline-none text-white focus:border-purple-500/50"
+                              disabled={isCommiting}
+                            />
+                            <button
+                              type="submit"
+                              disabled={isCommiting || !commitDescription.trim()}
+                              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-lg shadow-purple-600/20 disabled:opacity-40 disabled:hover:bg-purple-600 transition-all flex items-center gap-1.5"
+                            >
+                              {isCommiting ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Commiting...
+                                </>
+                              ) : (
+                                "Push Commit"
+                              )}
+                            </button>
+                          </div>
+                        </form>
+
+                        {/* Timeline */}
+                        <div className="relative pl-6 border-l border-zinc-900 space-y-6 max-h-[500px] overflow-y-auto pr-2">
+                          {commitsList.length === 0 ? (
+                            <div className="py-8 text-center text-zinc-500 text-xs">
+                              No version commits recorded yet. Push a commit above to snapshot your matrix.
+                            </div>
+                          ) : (
+                            commitsList.map((commit) => (
+                              <div key={commit.id} className="relative group text-left">
+                                {/* Dot Indicator */}
+                                <div className="absolute -left-[30px] top-1.5 w-2 h-2 rounded-full bg-purple-500 border border-black shadow-[0_0_8px_rgba(168,85,247,0.8)] group-hover:scale-125 transition-all" />
+                                
+                                <div className="p-4 rounded-2xl border border-zinc-900 bg-zinc-900/10 hover:border-zinc-850 hover:bg-zinc-900/20 transition-all space-y-2">
+                                  <div className="flex justify-between items-start flex-wrap gap-2">
+                                    <div>
+                                      <span className="font-mono text-[10px] bg-purple-950/40 text-purple-300 border border-purple-900/40 rounded px-1.5 py-0.5 font-bold uppercase mr-2 select-all">
+                                        commit {commit.commit_hash}
+                                      </span>
+                                      <span className="text-[10px] text-zinc-500">
+                                        {new Date(commit.created_at).toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <button
+                                      onClick={() => handleRevertCommit(commit)}
+                                      disabled={isRestoring}
+                                      className="px-2.5 py-1 bg-zinc-900 hover:bg-zinc-800 text-teal-400 hover:text-teal-300 border border-zinc-800 rounded-lg text-[9px] font-extrabold transition-all cursor-pointer"
+                                    >
+                                      Revert to This
+                                    </button>
+                                  </div>
+                                  
+                                  <p className="text-xs font-bold text-zinc-200">{commit.description}</p>
+                                  
+                                  {/* Snapshot metadata summary */}
+                                  <div className="pt-2 border-t border-zinc-900 flex justify-between items-center text-[10px] text-zinc-500">
+                                    <span>Snapshots: {Array.isArray(commit.scenarios_snapshot) ? commit.scenarios_snapshot.length : 0} Scenarios</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedCommitSnapshot(selectedCommitSnapshot?.id === commit.id ? null : commit);
+                                      }}
+                                      className="text-purple-400 hover:underline hover:text-purple-300 font-bold"
+                                    >
+                                      {selectedCommitSnapshot?.id === commit.id ? "Hide Details" : "Show Details"}
+                                    </button>
+                                  </div>
+
+                                  {selectedCommitSnapshot?.id === commit.id && (
+                                    <div className="p-3 bg-black rounded-lg border border-zinc-900 space-y-1 font-mono text-[9px] text-zinc-400 max-h-32 overflow-y-auto leading-relaxed select-all">
+                                      {commit.scenarios_snapshot.map((s: any, idx: number) => (
+                                        <div key={idx} className="truncate">
+                                          ➔ {s.title} ({s.questions ? s.questions.length : 0} Qs) - {s.target_age_group}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Column: Database Backups */}
+                    <div className="lg:col-span-5 space-y-6">
+                      <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-5">
+                        <div>
+                          <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                            <Activity className="w-5 h-5 text-teal-400" /> Database Backup Hub
+                          </h3>
+                          <p className="text-xs text-zinc-500 mt-1">Export, list, and schedule system-wide backups of users, institutional structures, and answers.</p>
+                        </div>
+
+                        {/* Trigger manual backup card */}
+                        <div className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-4 text-center">
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">
+                            Scheduled backups run automatically **every night at midnight** via Vercel Cron. You can also trigger a manual cold-storage snapshot right now.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleTriggerBackup}
+                            disabled={isBackingUp}
+                            className="w-full py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-black font-black text-xs shadow-lg shadow-teal-600/10 disabled:opacity-40 disabled:hover:bg-teal-600 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            {isBackingUp ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin text-black" /> Creating Backup...
+                              </>
+                            ) : (
+                              <>
+                                <Activity className="w-4 h-4 text-black" /> Trigger Manual Backup
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Backups log list */}
+                        <div className="space-y-3 max-h-[360px] overflow-y-auto pr-2">
+                          <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block text-left">Backup Logs &amp; Registry</label>
+                          {backupsList.length === 0 ? (
+                            <div className="py-6 text-center text-zinc-500 text-xs">
+                              No backup records found. Trigger one above or wait for cron.
+                            </div>
+                          ) : (
+                            backupsList.map((backup) => (
+                              <div key={backup.id} className="p-3 rounded-2xl border border-zinc-900 bg-zinc-900/10 space-y-3 relative group">
+                                <div className="flex justify-between items-start flex-wrap gap-2 text-left">
+                                  <div className="space-y-1">
+                                    <div className="text-[11px] font-black text-white font-mono truncate max-w-[200px]" title={backup.backup_name}>
+                                      {backup.backup_name}
+                                    </div>
+                                    <div className="text-[9px] text-zinc-500">
+                                      {new Date(backup.created_at).toLocaleString()}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                                      backup.status === 'Success' 
+                                        ? 'bg-emerald-950/40 text-emerald-450 border-emerald-900/40' 
+                                        : 'bg-red-950/40 text-red-400 border-red-900/40'
+                                    }`}>
+                                      {backup.status}
+                                    </span>
+                                    <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
+                                      {backup.backup_type}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Counts Grid */}
+                                <div className="grid grid-cols-5 gap-1.5 py-1.5 border-y border-zinc-900/80 text-[8px] font-bold text-center text-zinc-400 font-mono">
+                                  <div className="space-y-0.5">
+                                    <div className="text-zinc-500 text-[7px] uppercase font-sans">User</div>
+                                    <div className="text-white">{backup.profiles_count}</div>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="text-zinc-500 text-[7px] uppercase font-sans">Schl</div>
+                                    <div className="text-white">{backup.schools_count}</div>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="text-zinc-500 text-[7px] uppercase font-sans">Rstr</div>
+                                    <div className="text-white">{backup.roster_count}</div>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="text-zinc-500 text-[7px] uppercase font-sans">Scen</div>
+                                    <div className="text-white">{backup.scenarios_count}</div>
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="text-zinc-500 text-[7px] uppercase font-sans">Ques</div>
+                                    <div className="text-white">{backup.questions_count}</div>
+                                  </div>
+                                </div>
+
+                                <div className="flex justify-between items-center pt-1">
+                                  <button
+                                    onClick={() => handleRestoreBackup(backup)}
+                                    disabled={isRestoring || backup.status !== 'Success'}
+                                    className="px-2 py-1 rounded-md bg-red-950/40 hover:bg-red-900/30 text-red-400 hover:text-red-300 border border-red-900/30 text-[9px] font-extrabold transition-all cursor-pointer"
+                                  >
+                                    {isRestoring && restoringId === backup.id ? (
+                                      <>
+                                        <Loader2 className="w-2.5 h-2.5 animate-spin mr-1 inline-block" /> Restoring...
+                                      </>
+                                    ) : (
+                                      "Restore System"
+                                    )}
+                                  </button>
+
+                                  <button
+                                    onClick={() => handleDeleteBackup(backup)}
+                                    className="p-1 rounded text-zinc-500 hover:text-red-400 hover:bg-red-950/25 border border-transparent hover:border-red-900/30 transition-all cursor-pointer"
+                                    title="Delete backup log and file"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cold-Storage Response Archive */}
+                  <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-6">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                          <Archive className="w-5 h-5 text-emerald-400" /> Cold-Storage Response Archive
+                        </h3>
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Browse student response trails automatically preserved during scenario database changes or database rollbacks.
+                        </p>
+                      </div>
+                      
+                      {/* Search Bar */}
+                      <div className="relative w-full sm:w-64">
+                        <Search className="absolute left-3 top-2.5 w-4 h-4 text-zinc-500" />
+                        <input
+                          type="text"
+                          placeholder="Search by student name or email..."
+                          value={archiveSearchQuery}
+                          onChange={(e) => setArchiveSearchQuery(e.target.value)}
+                          className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-2 pl-9 pr-4 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Filtered responses list */}
+                    {(() => {
+                      const filtered = archivedResponses.filter(r => 
+                        !archiveSearchQuery || 
+                        (r.student_name && r.student_name.toLowerCase().includes(archiveSearchQuery.toLowerCase())) ||
+                        (r.student_email && r.student_email.toLowerCase().includes(archiveSearchQuery.toLowerCase())) ||
+                        (r.scenario_title && r.scenario_title.toLowerCase().includes(archiveSearchQuery.toLowerCase()))
+                      );
+
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="py-8 text-center text-zinc-500 text-xs border border-dashed border-zinc-900 rounded-2xl">
+                            {archivedResponses.length === 0 
+                              ? "No response trails archived in cold-storage yet." 
+                              : "No matching archived responses found."}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="overflow-x-auto border border-zinc-900 rounded-2xl bg-zinc-900/10">
+                          <table className="w-full text-left border-collapse text-xs">
+                            <thead>
+                              <tr className="border-b border-zinc-900 text-zinc-400 font-bold uppercase tracking-wider text-[10px] bg-zinc-950/40">
+                                <th className="p-3">Student</th>
+                                <th className="p-3">Scenario &amp; Question</th>
+                                <th className="p-3">Chosen Option</th>
+                                <th className="p-3 text-center">Dimension / Weight</th>
+                                <th className="p-3">Archived At</th>
+                                <th className="p-3 text-center">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-900/40">
+                              {filtered.map((r) => (
+                                <tr key={r.id} className="hover:bg-zinc-900/20 transition-all text-zinc-300">
+                                  <td className="p-3 space-y-0.5">
+                                    <div className="font-bold text-white">{r.student_name}</div>
+                                    <div className="text-[10px] text-zinc-500 font-mono">{r.student_email}</div>
+                                  </td>
+                                  <td className="p-3 space-y-0.5 max-w-xs">
+                                    <div className="text-teal-400 font-semibold truncate" title={r.scenario_title}>
+                                      {r.scenario_title}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-400 line-clamp-1" title={r.question_text}>
+                                      {r.question_text}
+                                    </div>
+                                  </td>
+                                  <td className="p-3 space-y-0.5 max-w-xs">
+                                    <div className="font-bold text-white">
+                                      Option {r.selected_option_letter}
+                                    </div>
+                                    <div className="text-[10px] text-zinc-400 line-clamp-1" title={r.selected_option_text}>
+                                      {r.selected_option_text}
+                                    </div>
+                                  </td>
+                                  <td className="p-3 text-center space-y-0.5">
+                                    <span className="px-1.5 py-0.5 rounded bg-zinc-900 text-[10px] text-purple-400 border border-zinc-800 font-bold">
+                                      {r.target_dimension}
+                                    </span>
+                                    <div className="text-[10px] text-zinc-500 font-mono">w: {r.intensity_weight}</div>
+                                  </td>
+                                  <td className="p-3 text-zinc-500 font-mono text-[10px]">
+                                    {new Date(r.archived_at).toLocaleString()}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <button
+                                      onClick={() => handleDeleteArchivedResponse(r.id)}
+                                      className="p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-red-950/20 border border-transparent hover:border-red-900/20 transition-all cursor-pointer"
+                                      title="Permanently purge from archive"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
