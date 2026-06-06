@@ -38,6 +38,19 @@ export async function POST(req: NextRequest) {
     }
 
     // ─── STANDARD DATABASE CODE ───
+    let defaultTimer = 15;
+    try {
+      const { data: timerSetting } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'default_overlay_timer')
+        .single();
+      if (timerSetting && timerSetting.value) {
+        defaultTimer = Number(timerSetting.value);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch default overlay timer from settings table:', e);
+    }
     
     // Fetch the session first (always needed)
     const { data: session, error: sessionError } = await supabase
@@ -366,7 +379,7 @@ export async function POST(req: NextRequest) {
       question_text: nextQuestion.question_text,
       sequence_order: nextQuestion.sequence_order,
       show_at_seconds: nextQuestion.show_at_seconds || 0,
-      timer_duration: nextQuestion.timer_duration || 15,
+      timer_duration: nextQuestion.timer_duration || defaultTimer,
       options: sortedOptions.map((opt: any) => ({
         id: opt.id,
         option_letter: opt.option_letter,
@@ -397,7 +410,8 @@ function handleInMemoryFallback(
   session_id: string, 
   question_id: string | null, 
   selected_option_id: string | null, 
-  response_time_ms: number | null
+  response_time_ms: number | null,
+  defaultTimer: number = 15
 ) {
   // Initialize local session state
   if (!inMemorySessions[session_id]) {
@@ -649,7 +663,7 @@ function handleInMemoryFallback(
       question_text: nextQuestion.question_text,
       sequence_order: nextQuestion.sequence_order,
       show_at_seconds: nextQuestion.show_at_seconds || 6,
-      timer_duration: nextQuestion.timer_duration || 15,
+      timer_duration: nextQuestion.timer_duration || defaultTimer,
       options: nextQuestion.options.map(opt => ({
         id: opt.id,
         option_letter: opt.option_letter,

@@ -129,6 +129,10 @@ const isValidUUID = (id: string | null | undefined): boolean => {
 
 export default function AdminConsole() {
   const router = useRouter();
+
+  // Global settings state
+  const [defaultOverlayTimer, setDefaultOverlayTimer] = useState<number>(15);
+  const [isUpdatingTimer, setIsUpdatingTimer] = useState<boolean>(false);
   
   // Auth & View Roles
   const [loading, setLoading] = useState(true);
@@ -224,7 +228,7 @@ export default function AdminConsole() {
     {
       question_text: '',
       show_at_seconds: 5,
-      timer_duration: 15,
+      timer_duration: defaultOverlayTimer,
       options: [
         { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
         { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -316,7 +320,7 @@ export default function AdminConsole() {
       {
         question_text: '',
         show_at_seconds: 5,
-        timer_duration: 15,
+        timer_duration: defaultOverlayTimer,
         options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -577,7 +581,7 @@ export default function AdminConsole() {
           return {
             ...q,
             id: qId,
-            timer_duration: q.timer_duration || 15,
+            timer_duration: q.timer_duration || defaultOverlayTimer,
             options
           };
         });
@@ -804,6 +808,93 @@ export default function AdminConsole() {
     }
   };
 
+  const handleUpdateGlobalTimer = async () => {
+    if (defaultOverlayTimer <= 0) return;
+    setIsUpdatingTimer(true);
+    try {
+      // 1. Get the old default first
+      const { data: settingData, error: getSettingErr } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'default_overlay_timer')
+        .single();
+      
+      if (getSettingErr && getSettingErr.code !== 'PGRST116') {
+        throw getSettingErr;
+      }
+      
+      const oldDefault = settingData ? Number(settingData.value || 15) : 15;
+
+      if (oldDefault === defaultOverlayTimer) {
+        alert(`Overlay timer is already set to ${defaultOverlayTimer}s.`);
+        setIsUpdatingTimer(false);
+        return;
+      }
+
+      // 2. Perform batch update of questions whose timer matches the old default
+      const { error: updateQsError } = await supabase
+        .from('questions')
+        .update({ timer_duration: defaultOverlayTimer })
+        .eq('timer_duration', oldDefault);
+
+      if (updateQsError) throw updateQsError;
+
+      // 3. Upsert the setting key in system_settings
+      const { error: updateSettingError } = await supabase
+        .from('system_settings')
+        .upsert({ 
+          key: 'default_overlay_timer', 
+          value: String(defaultOverlayTimer), 
+          updated_at: new Date().toISOString() 
+        });
+
+      if (updateSettingError) throw updateSettingError;
+
+      alert(`Successfully updated default overlay timer from ${oldDefault}s to ${defaultOverlayTimer}s. All questions using the previous default value have been updated. Manually customized timers were preserved.`);
+      
+      // 4. Force reload scenarios and list to reflect updated timer values
+      const { data: scenData } = await supabase
+        .from('scenarios')
+        .select('*, questions(*, options(*))')
+        .order('created_at', { ascending: true });
+        
+      if (scenData && scenData.length > 0) {
+        const mappedScenarios = scenData.map((s: any) => ({
+          id: s.id,
+          title: s.title,
+          video_url: s.video_url,
+          target_age_group: s.target_age_group,
+          is_active: s.is_active,
+          is_backup: s.is_backup,
+          status: s.status || 'Published',
+          expected_time: s.expected_time || 60,
+          focus_category: s.focus_category || 'STEM',
+          questions: (s.questions || []).map((q: any) => ({
+            id: q.id,
+            sequence_order: q.sequence_order,
+            question_text: q.question_text,
+            show_at_seconds: q.show_at_seconds || 0,
+            timer_duration: q.timer_duration || defaultOverlayTimer,
+            options: (q.options || []).map((o: any) => ({
+              id: o.id,
+              option_letter: o.option_letter,
+              option_text: o.option_text,
+              target_dimension: o.target_dimension,
+              intensity_weight: o.intensity_weight
+            })).sort((a: any, b: any) => a.option_letter.localeCompare(b.option_letter))
+          })).sort((a: any, b: any) => a.sequence_order - b.sequence_order)
+        }));
+        setScenarios(mappedScenarios);
+      }
+      
+    } catch (e: any) {
+      console.error('Error updating default overlay timer:', e);
+      alert('Failed to update default overlay timer: ' + e.message);
+    } finally {
+      setIsUpdatingTimer(false);
+    }
+  };
+
   const handleRestoreBackup = async (backup: any) => {
     const typedConfirm = prompt(
       `CRITICAL WARNING: Restoring the system from [${backup.backup_name}] will truncate ALL database tables and insert old records. To prevent mistakes, please type "RESTORE" to confirm.`
@@ -978,6 +1069,22 @@ export default function AdminConsole() {
         }
 
         // Load data from Supabase
+        // 0. Fetch Global Settings
+        let fetchedDefaultTimer = 15;
+        try {
+          const { data: settingData } = await supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', 'default_overlay_timer')
+            .single();
+          if (settingData && settingData.value) {
+            fetchedDefaultTimer = Number(settingData.value);
+            setDefaultOverlayTimer(fetchedDefaultTimer);
+          }
+        } catch (err) {
+          console.warn('Failed to retrieve default overlay timer setting:', err);
+        }
+
         // 1. Fetch Scenarios
         const { data: scenData, error: scenError } = await supabase
           .from('scenarios')
@@ -1003,7 +1110,7 @@ export default function AdminConsole() {
               sequence_order: q.sequence_order,
               question_text: q.question_text,
               show_at_seconds: q.show_at_seconds || 0,
-              timer_duration: q.timer_duration || 15,
+              timer_duration: q.timer_duration || fetchedDefaultTimer,
               options: (q.options || []).map((o: any) => ({
                 id: o.id,
                 option_letter: o.option_letter,
@@ -1111,7 +1218,7 @@ export default function AdminConsole() {
           id: q.id,
           question_text: q.question_text,
           show_at_seconds: q.show_at_seconds || 5,
-          timer_duration: q.timer_duration || 15,
+          timer_duration: q.timer_duration || defaultOverlayTimer,
           options: q.options ? JSON.parse(JSON.stringify(q.options)) : [
             { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
             { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -1126,7 +1233,7 @@ export default function AdminConsole() {
       {
         question_text: '',
         show_at_seconds: 5,
-        timer_duration: 15,
+        timer_duration: defaultOverlayTimer,
         options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -1472,7 +1579,7 @@ export default function AdminConsole() {
       {
         question_text: '',
         show_at_seconds: 5,
-        timer_duration: 15,
+        timer_duration: defaultOverlayTimer,
         options: [
           { option_letter: 'A', option_text: '', target_dimension: 'The Thinker', intensity_weight: 0.8 },
           { option_letter: 'B', option_text: '', target_dimension: 'The Creator', intensity_weight: 0.8 },
@@ -1503,7 +1610,7 @@ export default function AdminConsole() {
             sequence_order: qSetSetNumber,
             question_text: q.question_text,
             show_at_seconds: q.show_at_seconds || 0,
-            timer_duration: q.timer_duration || 15,
+            timer_duration: q.timer_duration || defaultOverlayTimer,
             options: mappedOptions
           };
         });
@@ -2942,7 +3049,7 @@ export default function AdminConsole() {
                                             type="number"
                                             required
                                             min="1"
-                                            value={editQForm.timer_duration || 15}
+                                            value={editQForm.timer_duration || defaultOverlayTimer}
                                             onChange={(e) => setEditQForm({ ...editQForm, timer_duration: Number(e.target.value) })}
                                             className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-2 px-3 text-xs focus:outline-none text-white focus:border-purple-500"
                                           />
@@ -3066,7 +3173,7 @@ export default function AdminConsole() {
                                           Readability: {readability.grade} ({readability.level})
                                         </span>
                                         <span className="font-bold text-amber-500">Trigger: {q.show_at_seconds || 5}s</span>
-                                        <span className="font-bold text-teal-400">Timer: {q.timer_duration || 15}s</span>
+                                        <span className="font-bold text-teal-400">Timer: {q.timer_duration || defaultOverlayTimer}s</span>
                                         <button
                                           onClick={() => {
                                             setEditingQuestionId(q.id);
@@ -3940,6 +4047,46 @@ export default function AdminConsole() {
                               </div>
                             ))
                           )}
+                        </div>
+                      </div>
+
+                      {/* Global Settings */}
+                      <div className="p-6 rounded-3xl bg-zinc-950 border border-zinc-900 space-y-5 text-left">
+                        <div>
+                          <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                            <Clock className="w-5 h-5 text-teal-400" /> Global Settings
+                          </h3>
+                          <p className="text-xs text-zinc-500 mt-1">Configure system-wide settings. This will automatically update default values without overwriting manual overrides.</p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider block">Default Overlay Timer (seconds)</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="300"
+                              value={defaultOverlayTimer}
+                              onChange={(e) => setDefaultOverlayTimer(Math.max(1, Number(e.target.value)))}
+                              className="w-full bg-black border border-zinc-850 rounded-xl py-2 px-3 text-xs focus:outline-none text-white focus:border-teal-500/50"
+                              disabled={isUpdatingTimer}
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleUpdateGlobalTimer}
+                            disabled={isUpdatingTimer}
+                            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs shadow-lg shadow-purple-600/20 disabled:opacity-40 disabled:hover:bg-purple-600 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            {isUpdatingTimer ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" /> Updating Timer...
+                              </>
+                            ) : (
+                              "Update Global Default Timer"
+                            )}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -4826,7 +4973,7 @@ export default function AdminConsole() {
                             required
                             min="1"
                             placeholder="15"
-                            value={q.timer_duration || 15}
+                            value={q.timer_duration || defaultOverlayTimer}
                             onChange={(e) => handleQuestionTimerChange(qIdx, Number(e.target.value))}
                             className="w-full bg-zinc-900 border border-zinc-805 rounded-lg py-2 px-3 text-xs focus:outline-none text-white"
                           />
@@ -4979,7 +5126,7 @@ export default function AdminConsole() {
                         <div key={q.id || qIdx} className="p-3 bg-zinc-900/40 border border-zinc-900 rounded-xl space-y-1">
                           <div className="flex justify-between text-[8px] text-zinc-500 font-bold">
                             <span>Question #{qIdx + 1}</span>
-                            <span>Trigger: {q.show_at_seconds || 5}s • Timer: {q.timer_duration || 15}s</span>
+                            <span>Trigger: {q.show_at_seconds || 5}s • Timer: {q.timer_duration || defaultOverlayTimer}s</span>
                           </div>
                           <p className="text-[11px] text-zinc-200 font-medium line-clamp-2">{q.question_text}</p>
                         </div>
