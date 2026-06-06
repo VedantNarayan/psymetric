@@ -219,13 +219,14 @@ export async function POST(req: NextRequest) {
         activeQ = qs.sort((a: any, b: any) => a.sequence_order - b.sequence_order)[0];
       }
 
-      const isCompleted = qs.some((q: any) => answeredQuestionIds.has(q.id));
+      const isCompleted = candidates.length > 0 ? candidates.every((q: any) => answeredQuestionIds.has(q.id)) : true;
+      const isInProgress = candidates.length > 0 ? (candidates.some((q: any) => answeredQuestionIds.has(q.id)) && !isCompleted) : false;
       
       return {
         ...sc,
         activeQuestion: activeQ,
         isCompleted,
-        isInProgress: false // scenario has exactly 1 question per session, so it is never in-progress
+        isInProgress
       };
     });
 
@@ -321,9 +322,15 @@ export async function POST(req: NextRequest) {
     let nextQuestion = null;
 
     if (is_extended && completedScenariosCount >= 12) {
-      nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
+      nextScenario = scenarioQuestionStatus.find(s => s.is_backup && s.isInProgress);
+      if (!nextScenario) {
+        nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
+      }
     } else {
-      nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+      nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && s.isInProgress);
+      if (!nextScenario) {
+        nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+      }
     }
 
     if (nextScenario && nextScenario.activeQuestion) {
@@ -526,13 +533,14 @@ function handleInMemoryFallback(
       activeQ = qs.sort((a, b) => a.sequence_order - b.sequence_order)[0];
     }
 
-    const isCompleted = qs.some(q => answeredQuestionIds.has(q.id));
+    const isCompleted = candidates.length > 0 ? candidates.every(q => answeredQuestionIds.has(q.id)) : true;
+    const isInProgress = candidates.length > 0 ? (candidates.some(q => answeredQuestionIds.has(q.id)) && !isCompleted) : false;
     
     return {
       ...sc,
       activeQuestion: activeQ,
       isCompleted,
-      isInProgress: false // scenario has exactly 1 question per session, so it is never in-progress
+      isInProgress
     };
   });
 
@@ -599,9 +607,15 @@ function handleInMemoryFallback(
   let nextQuestion = null;
 
   if (session.is_extended && completedScenariosCount >= 12) {
-    nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
+    nextScenario = scenarioQuestionStatus.find(s => s.is_backup && s.isInProgress);
+    if (!nextScenario) {
+      nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
+    }
   } else {
-    nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+    nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && s.isInProgress);
+    if (!nextScenario) {
+      nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+    }
   }
 
   if (nextScenario && nextScenario.activeQuestion) {

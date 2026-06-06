@@ -66,7 +66,7 @@ export default function AssessmentWorkspace() {
 
   // Video overlay state
   const [showOverlay, setShowOverlay] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const lastScenarioId = useRef<string | null>(null);
   const hasTriggeredRef = useRef(false);
 
@@ -400,12 +400,27 @@ export default function AssessmentWorkspace() {
 
   // Sync volume, play state, loop for background video elements
   useEffect(() => {
+    const playVideo = async (videoEl: HTMLVideoElement) => {
+      try {
+        videoEl.load();
+        await videoEl.play();
+      } catch (err) {
+        console.warn("Autoplay blocked or playback error, falling back to muted:", err);
+        setIsMuted(true);
+        videoEl.muted = true;
+        try {
+          await videoEl.play();
+        } catch (retryErr) {
+          console.error("Muted playback failed as well:", retryErr);
+          setVideoError(true);
+        }
+      }
+    };
+
     if (activeVideoLayer === 'A' && videoRefA.current) {
-      videoRefA.current.load();
-      videoRefA.current.play().catch(() => setVideoError(true));
+      playVideo(videoRefA.current);
     } else if (activeVideoLayer === 'B' && videoRefB.current) {
-      videoRefB.current.load();
-      videoRefB.current.play().catch(() => setVideoError(true));
+      playVideo(videoRefB.current);
     }
   }, [activeVideoLayer, videoA, videoB]);
 

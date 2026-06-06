@@ -53,16 +53,24 @@ const mockScenarios = Array.from({ length: 18 }, (_, idx) => {
 function simulateNextItem(sessionId, answeredQuestionIds, set_number, isExtended, totalExtendedScenarios) {
   const scenarioQuestionStatus = mockScenarios.map(sc => {
     const qs = sc.questions || [];
-    let activeQ = qs.find(q => q.sequence_order === set_number);
+    
+    const candidates = qs.filter(q => q.sequence_order === set_number);
+    let activeQ = candidates.find(q => !answeredQuestionIds.has(q.id));
+    if (!activeQ && candidates.length > 0) {
+      activeQ = candidates[0];
+    }
     if (!activeQ && qs.length > 0) {
       activeQ = qs.sort((a, b) => a.sequence_order - b.sequence_order)[0];
     }
-    const isCompleted = activeQ ? answeredQuestionIds.has(activeQ.id) : false;
+
+    const isCompleted = candidates.length > 0 ? candidates.every(q => answeredQuestionIds.has(q.id)) : true;
+    const isInProgress = candidates.length > 0 ? (candidates.some(q => answeredQuestionIds.has(q.id)) && !isCompleted) : false;
 
     return {
       ...sc,
       activeQuestion: activeQ,
-      isCompleted
+      isCompleted,
+      isInProgress
     };
   });
 
@@ -77,9 +85,15 @@ function simulateNextItem(sessionId, answeredQuestionIds, set_number, isExtended
 
   let nextScenario = null;
   if (isExtended && completedScenariosCount >= 12) {
-    nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
+    nextScenario = scenarioQuestionStatus.find(s => s.is_backup && s.isInProgress);
+    if (!nextScenario) {
+      nextScenario = scenarioQuestionStatus.find(s => s.is_backup && !s.isCompleted);
+    }
   } else {
-    nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+    nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && s.isInProgress);
+    if (!nextScenario) {
+      nextScenario = scenarioQuestionStatus.find(s => !s.is_backup && !s.isCompleted);
+    }
   }
 
   if (!nextScenario || !nextScenario.activeQuestion) {
