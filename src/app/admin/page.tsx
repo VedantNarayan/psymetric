@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase/client';
 import { 
@@ -458,6 +458,8 @@ export default function AdminConsole() {
   const [simSelectedOption, setSimSelectedOption] = useState<string | null>(null);
   const [simShowOverlay, setSimShowOverlay] = useState<boolean>(false);
   const [simCompleted, setSimCompleted] = useState<boolean>(false);
+  const [simVideoPlaying, setSimVideoPlaying] = useState<boolean>(false);
+  const simVideoRef = useRef<HTMLVideoElement>(null);
 
   // Bulk schema editor text state
   const [bulkJsonText, setBulkJsonText] = useState<string>('');
@@ -1565,7 +1567,90 @@ export default function AdminConsole() {
     setSimShowOverlay(false);
     setSimCompleted(false);
     setSimIsRunning(true);
+    setSimVideoPlaying(false);
     setScenActiveView('simulator');
+  };
+
+  const handleUpdateSimQuestion = (index: number, field: 'show_at_seconds' | 'timer_duration', value: number) => {
+    const updated = [...simQuestions];
+    updated[index] = {
+      ...updated[index],
+      [field]: value
+    };
+    setSimQuestions(updated);
+  };
+
+  const handleSaveSimulatorAdjustments = async () => {
+    try {
+      for (const q of simQuestions) {
+        if (!q.id) continue;
+        const { error } = await supabase
+          .from('questions')
+          .update({
+            show_at_seconds: q.show_at_seconds,
+            timer_duration: q.timer_duration
+          })
+          .eq('id', q.id);
+        if (error) throw error;
+      }
+
+      // Sync scenarios state so that changes are globally reflected in UI
+      const updatedScenarios = scenarios.map(s => {
+        if (s.id === simScenarioId) {
+          return {
+            ...s,
+            questions: s.questions.map((q: any) => {
+              const simQ = simQuestions.find(sq => sq.id === q.id);
+              if (simQ) {
+                return {
+                  ...q,
+                  show_at_seconds: simQ.show_at_seconds,
+                  timer_duration: simQ.timer_duration
+                };
+              }
+              return q;
+            })
+          };
+        }
+        return s;
+      });
+      setScenarios(updatedScenarios);
+      setBulkJsonText(JSON.stringify(updatedScenarios, null, 2));
+
+      alert("Successfully saved question adjustments to database!");
+      setSimLogs(prev => [
+        ...prev,
+        `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Saved question adjustments to Supabase.`
+      ]);
+    } catch (err: any) {
+      console.error("Error saving simulator adjustments:", err);
+      alert("Failed to save adjustments: " + err.message);
+    }
+  };
+
+  const handleSimVideoTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = e.currentTarget;
+    if (!video || !simIsRunning || simShowOverlay || simCompleted) return;
+
+    const curTime = Math.floor(video.currentTime);
+    setSimCurrentTime(curTime);
+
+    const currentQ = simQuestions[simCurrentQIndex];
+    if (currentQ && curTime >= currentQ.show_at_seconds) {
+      video.pause();
+      setSimVideoPlaying(false);
+      setSimShowOverlay(true);
+      setSimLogs(prev => [
+        ...prev,
+        `[00:${curTime < 10 ? '0' + curTime : curTime}] Auto-paused. Question #${simCurrentQIndex + 1} Overlay triggered.`
+      ]);
+    }
+  };
+
+  const handleSimVideoEnded = () => {
+    setSimCompleted(true);
+    setSimVideoPlaying(false);
+    setSimLogs(prev => [...prev, `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Video ended. Simulation complete.`]);
   };
 
   const handleCreateQuestionSetClick = () => {
@@ -3481,16 +3566,23 @@ export default function AdminConsole() {
                         
                         {/* Simulation Screen Box */}
                         <div className="lg:col-span-8 flex flex-col space-y-4">
-                          <div className="relative aspect-video rounded-2xl bg-[#0a0a0a] border border-zinc-800 flex flex-col items-center justify-center overflow-hidden shadow-inner p-4 text-center">
+                          <div className="relative aspect-video rounded-2xl bg-[#0a0a0a] border border-zinc-800 flex flex-col items-center justify-center overflow-hidden shadow-inner text-center">
                             
                             {/* Complete State */}
                             {simCompleted ? (
-                              <div className="space-y-4 max-w-md animate-scaleUp">
+                              <div className="relative z-10 space-y-4 max-w-md animate-scaleUp p-6 bg-black/85 rounded-3xl border border-zinc-800">
                                 <span className="text-4xl">🏆</span>
                                 <h4 className="text-base font-black text-teal-400">Simulation Complete!</h4>
                                 <p className="text-[11px] text-zinc-400">The assessment set has been successfully simulated. Review the final score vector in the status dashboard.</p>
                                 <button
-                                  onClick={() => setSimIsRunning(false)}
+                                  onClick={() => {
+                                    if (simVideoRef.current) {
+                                      simVideoRef.current.pause();
+                                      simVideoRef.current.currentTime = 0;
+                                    }
+                                    setSimIsRunning(false);
+                                    setSimVideoPlaying(false);
+                                  }}
                                   className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-300 font-bold text-xs rounded-lg border border-zinc-800"
                                 >
                                   End Simulation
@@ -3498,10 +3590,21 @@ export default function AdminConsole() {
                               </div>
                             ) : (
                               <>
+                                {/* Live Backdrop Video */}
+                                <video
+                                  ref={simVideoRef}
+                                  src={scenarios.find(s => s.id === simScenarioId)?.video_url || ''}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  playsInline
+                                  muted
+                                  onTimeUpdate={handleSimVideoTimeUpdate}
+                                  onEnded={handleSimVideoEnded}
+                                />
+
                                 {/* Overlay Question State */}
                                 {simShowOverlay && simQuestions[simCurrentQIndex] ? (
                                   <div className="absolute inset-0 z-10 flex items-center justify-center p-6 bg-black/60 backdrop-blur-md animate-fadeIn">
-                                    <div className="bg-zinc-950/80 border border-zinc-850 p-6 rounded-3xl w-full max-w-lg space-y-4 text-left shadow-2xl relative overflow-hidden">
+                                    <div className="bg-zinc-950/90 border border-zinc-850 p-6 rounded-3xl w-full max-w-lg space-y-4 text-left shadow-2xl relative overflow-hidden">
                                       <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-teal-500 to-indigo-500" />
                                       <span className="text-[9px] font-bold text-teal-400 uppercase tracking-widest block font-mono">Question Overlay Triggered</span>
                                       <h5 className="text-xs font-bold text-white leading-relaxed">{simQuestions[simCurrentQIndex].question_text}</h5>
@@ -3567,6 +3670,10 @@ export default function AdminConsole() {
                                                       ...prev,
                                                       `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Resuming backdrop playback.`
                                                     ]);
+                                                    if (simVideoRef.current) {
+                                                      simVideoRef.current.play().catch(err => console.warn(err));
+                                                      setSimVideoPlaying(true);
+                                                    }
                                                   }
                                                 }, 800);
                                               }}
@@ -3590,25 +3697,12 @@ export default function AdminConsole() {
                                     </div>
                                   </div>
                                 ) : (
-                                  /* Playback mockup animation */
-                                  <div className="space-y-4">
-                                    <div className="flex gap-1.5 justify-center items-center">
-                                      <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-ping" />
-                                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold font-mono">BACKDROP PLAYING</span>
-                                    </div>
-                                    <h4 className="text-sm font-extrabold text-white">Simulating MP4 Backdrop Video</h4>
-                                    <div className="flex gap-2 justify-center pt-2">
-                                      {Array.from({ length: 5 }).map((_, i) => (
-                                        <div 
-                                          key={i} 
-                                          className="w-1.5 h-6 bg-teal-500/35 rounded-full transition-all duration-300"
-                                          style={{ 
-                                            height: `${12 + Math.sin((simCurrentTime + i) * 1.5) * 12}px`,
-                                            opacity: 0.3 + (i * 0.15)
-                                          }}
-                                        />
-                                      ))}
-                                    </div>
+                                  /* HUD overlay on video */
+                                  <div className="absolute bottom-4 left-4 z-10 flex items-center gap-2 bg-black/70 backdrop-blur-sm border border-zinc-800 px-3 py-1.5 rounded-full">
+                                    <div className={`w-2 h-2 rounded-full ${simVideoPlaying ? 'bg-red-500 animate-ping' : 'bg-zinc-500'}`} />
+                                    <span className="text-[9px] font-mono text-zinc-300 uppercase tracking-widest font-extrabold">
+                                      {simVideoPlaying ? 'Backdrop Playing' : 'Paused'}
+                                    </span>
                                   </div>
                                 )}
                               </>
@@ -3620,68 +3714,108 @@ export default function AdminConsole() {
                           <div className="p-3 bg-zinc-950 border border-zinc-900 rounded-2xl flex items-center justify-between gap-4">
                             <div className="flex items-center gap-3">
                               <button
-                                disabled={simCompleted}
+                                disabled={simCompleted || simShowOverlay}
                                 onClick={() => {
-                                  // Simple tick playback timer toggle
-                                  if (simIsRunning && !simShowOverlay) {
-                                    // Start timeline tick loop simulation
-                                    const interval = setInterval(() => {
-                                      setSimCurrentTime(t => {
-                                        const nextTime = t + 1;
-                                        // Check if a question triggers
-                                        const qIndex = simQuestions.findIndex(q => q.show_at_seconds === nextTime);
-                                        if (qIndex !== -1) {
-                                          clearInterval(interval);
-                                          setSimShowOverlay(true);
-                                          setSimCurrentQIndex(qIndex);
-                                          setSimLogs(prev => [
-                                            ...prev,
-                                            `[00:${nextTime < 10 ? '0' + nextTime : nextTime}] Auto-paused. Question #${qIndex + 1} Overlay triggered.`
-                                          ]);
-                                        }
-                                        if (nextTime >= 60) {
-                                          clearInterval(interval);
-                                          setSimCompleted(true);
-                                        }
-                                        return nextTime;
-                                      });
-                                    }, 1000);
-
-                                    // Store interval on window to clear easily
-                                    (window as any).simInterval = interval;
-                                    setSimLogs(prev => [...prev, `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Backdrop playback resumed.`]);
+                                  if (simVideoRef.current) {
+                                    simVideoRef.current.play().catch(err => console.warn("Play blocked:", err));
+                                    setSimVideoPlaying(true);
+                                    setSimLogs(prev => [...prev, `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Backdrop playback started.`]);
                                   }
                                 }}
-                                className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 text-[10px] rounded-lg text-zinc-300 hover:text-white font-bold"
+                                className={`px-3 py-1.5 border text-[10px] rounded-lg font-bold transition-colors ${
+                                  simVideoPlaying 
+                                    ? 'bg-teal-950/25 border-teal-500/30 text-teal-400 font-extrabold' 
+                                    : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white'
+                                }`}
                               >
-                                Play Timer
+                                Play Video
                               </button>
                               <button
+                                disabled={simCompleted || !simVideoPlaying}
                                 onClick={() => {
-                                  if ((window as any).simInterval) {
-                                    clearInterval((window as any).simInterval);
-                                    setSimLogs(prev => [...prev, `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Paused by admin.`]);
+                                  if (simVideoRef.current) {
+                                    simVideoRef.current.pause();
+                                    setSimVideoPlaying(false);
+                                    setSimLogs(prev => [...prev, `[00:${simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime}] Backdrop playback paused.`]);
                                   }
                                 }}
-                                className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 text-[10px] rounded-lg text-zinc-300 hover:text-white font-bold"
+                                className="px-3 py-1.5 bg-zinc-900 border border-zinc-800 text-[10px] rounded-lg text-zinc-300 hover:text-white font-bold disabled:opacity-40"
                               >
                                 Pause
                               </button>
                             </div>
 
                             <div className="text-[10px] text-zinc-500 font-mono">
-                              Timeline: 00:{simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime} / 00:60
+                              Timeline: 00:{simCurrentTime < 10 ? '0' + simCurrentTime : simCurrentTime} / 00:{simVideoRef.current ? Math.floor(simVideoRef.current.duration) || 60 : 60}
                             </div>
 
                             <button
                               onClick={() => {
-                                if ((window as any).simInterval) clearInterval((window as any).simInterval);
+                                if (simVideoRef.current) {
+                                  simVideoRef.current.pause();
+                                }
                                 setSimIsRunning(false);
+                                setSimVideoPlaying(false);
                               }}
                               className="px-3 py-1.5 bg-red-950/20 border border-red-900/30 text-[10px] rounded-lg text-red-400 font-bold"
                             >
                               Exit Simulation
                             </button>
+                          </div>
+
+                          {/* Questions Timing Adjustments Card */}
+                          <div className="p-5 bg-zinc-950 border border-zinc-900 rounded-3xl space-y-4 text-left">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <h4 className="text-xs font-extrabold text-white uppercase tracking-wider">Scenario Question Timing Adjustments</h4>
+                                <p className="text-[10px] text-zinc-500 mt-0.5">Minutely adjust the overlay show time and question timer relative to the video timeline.</p>
+                              </div>
+                              <button
+                                onClick={handleSaveSimulatorAdjustments}
+                                className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-black font-extrabold text-[10px] rounded-lg shadow-md transition-all"
+                              >
+                                Save Adjustments
+                              </button>
+                            </div>
+                            
+                            <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                              {simQuestions.map((q, idx) => (
+                                <div key={q.id || idx} className="p-3 bg-zinc-900/40 border border-zinc-850 rounded-xl space-y-2">
+                                  <div className="flex justify-between items-start">
+                                    <span className="text-[10px] text-teal-400 font-bold font-mono uppercase">Question {idx + 1}</span>
+                                    <span className="text-[9px] text-zinc-500 font-mono">ID: {q.id ? q.id.slice(0, 8) : 'New'}</span>
+                                  </div>
+                                  <p className="text-[11px] text-zinc-300 font-medium line-clamp-1">{q.question_text}</p>
+                                  <div className="grid grid-cols-2 gap-3 pt-1">
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] text-zinc-500 font-bold uppercase block">Show At (seconds)</label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="300"
+                                        value={q.show_at_seconds}
+                                        onChange={(e) => handleUpdateSimQuestion(idx, 'show_at_seconds', Number(e.target.value))}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-1 px-2 text-[10px] text-white focus:outline-none focus:border-teal-500"
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] text-zinc-500 font-bold uppercase block">Overlay Timer (seconds)</label>
+                                      <input
+                                        type="number"
+                                        min="5"
+                                        max="120"
+                                        value={q.timer_duration}
+                                        onChange={(e) => handleUpdateSimQuestion(idx, 'timer_duration', Number(e.target.value))}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg py-1 px-2 text-[10px] text-white focus:outline-none focus:border-teal-500"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                              {simQuestions.length === 0 && (
+                                <p className="text-[10px] text-zinc-500 italic text-center py-4">No questions configured for this question set.</p>
+                              )}
+                            </div>
                           </div>
                         </div>
 

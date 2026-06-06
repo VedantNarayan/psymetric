@@ -299,7 +299,20 @@ export async function POST(req: NextRequest) {
         is_cheat_flagged = true;
         cheat_reason = reasons.join(' | ');
         is_extended = true;
-        total_extended_scenarios = 6;
+        
+        let dynamicExtendedCount = 3;
+        if (speedClickRatio > 0.5) {
+          dynamicExtendedCount += 3;
+        } else if (speedClickRatio > 0.3) {
+          dynamicExtendedCount += 2;
+        }
+        let contradictionCount = 0;
+        if (contradictionRS) contradictionCount++;
+        if (contradictionIE) contradictionCount++;
+        if (contradictionAC) contradictionCount++;
+        dynamicExtendedCount += contradictionCount;
+        
+        total_extended_scenarios = Math.max(3, Math.min(6, dynamicExtendedCount));
 
         await supabase
           .from('assessment_sessions')
@@ -307,7 +320,7 @@ export async function POST(req: NextRequest) {
             is_cheat_flagged: true,
             cheat_reason: cheat_reason,
             is_extended: true,
-            total_extended_scenarios: 6
+            total_extended_scenarios: total_extended_scenarios
           })
           .eq('id', session_id);
       }
@@ -597,7 +610,20 @@ function handleInMemoryFallback(
       session.is_cheat_flagged = true;
       session.cheat_reason = reasons.join(' | ');
       session.is_extended = true;
-      session.total_extended_scenarios = 6;
+      
+      let dynamicExtendedCount = 3;
+      if (speedClickRatio > 0.5) {
+        dynamicExtendedCount += 3;
+      } else if (speedClickRatio > 0.3) {
+        dynamicExtendedCount += 2;
+      }
+      let contradictionCount = 0;
+      if (contradictionRS) contradictionCount++;
+      if (contradictionIE) contradictionCount++;
+      if (contradictionAC) contradictionCount++;
+      dynamicExtendedCount += contradictionCount;
+      
+      session.total_extended_scenarios = Math.max(3, Math.min(6, dynamicExtendedCount));
     }
   }
 

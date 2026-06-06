@@ -35,8 +35,8 @@ function calculateSetNumber(pastSessions, currentUserId) {
 }
 
 // Mock scenarios database
-const mockScenarios = Array.from({ length: 18 }, (_, idx) => {
-  const isBackup = idx >= 12; // 12 baseline, 6 backup
+const mockScenarios = Array.from({ length: 25 }, (_, idx) => {
+  const isBackup = idx >= 12; // 12 baseline, rest backup
   return {
     id: `scen_${idx + 1}`,
     title: `Scenario Title ${idx + 1}`,
@@ -211,6 +211,7 @@ function runTests() {
 
   let extStepsCount = 0;
   let simulatedExtendedState = false;
+  let simulatedExtendedScenarios = 0;
   
   while (!currentStepExt.is_completed && extStepsCount < 30) {
     const { nextScenario, nextQuestion } = currentStepExt;
@@ -224,12 +225,13 @@ function runTests() {
     // Simulate answering
     answeredQuestionIdsExt.add(nextQuestion.id);
 
-    // Mock statistical contradiction trigger at step 12, extending session by 6
+    // Mock statistical contradiction trigger at step 12, dynamically extending session
     if (seenScenarioIdsExt.size === 12) {
       simulatedExtendedState = true;
+      simulatedExtendedScenarios = 6; // Dynamic extension count simulated
     }
 
-    currentStepExt = simulateNextItem('s_test_ext', answeredQuestionIdsExt, 1, simulatedExtendedState, 6);
+    currentStepExt = simulateNextItem('s_test_ext', answeredQuestionIdsExt, 1, simulatedExtendedState, simulatedExtendedState ? simulatedExtendedScenarios : 0);
     extStepsCount++;
   }
 

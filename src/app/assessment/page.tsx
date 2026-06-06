@@ -66,7 +66,7 @@ export default function AssessmentWorkspace() {
 
   // Video overlay state
   const [showOverlay, setShowOverlay] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
   const lastScenarioId = useRef<string | null>(null);
   const hasTriggeredRef = useRef(false);
 
@@ -1280,11 +1280,6 @@ export default function AssessmentWorkspace() {
                 <span className="flex items-center gap-1">
                   <HelpCircle className="w-3.5 h-3.5 animate-pulse" /> Pick option closest to instinct
                 </span>
-                {isExtended && (
-                  <span className="flex items-center gap-1.5 text-amber-500/85 font-bold uppercase tracking-wider animate-pulse">
-                    <AlertTriangle className="w-3.5 h-3.5" /> Extension Active (+6 scenarios)
-                  </span>
-                )}
               </div>
 
             </div>
