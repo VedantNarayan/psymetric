@@ -516,7 +516,7 @@ export default function AdminConsole() {
         const parsed = JSON.parse(text);
         if (Array.isArray(parsed)) {
           if (confirm(`Are you sure you want to import ${parsed.length} scenarios? This will replace your diagnostic scenario bank in bulk and sync it to Supabase.`)) {
-            await syncBulkScenariosToSupabase(parsed);
+            await syncBulkScenariosToSupabase(parsed, `Auto-Commit: Bulk import from file [${file.name}]`);
           }
         } else {
           alert("Invalid scenario schema. Must be a JSON array of scenarios.");
@@ -1384,7 +1384,7 @@ export default function AdminConsole() {
   const handleApplyBulkChanges = async () => {
     if (handleValidateBulkJson(bulkJsonText)) {
       const parsedScenarios = JSON.parse(bulkJsonText);
-      await syncBulkScenariosToSupabase(parsedScenarios);
+      await syncBulkScenariosToSupabase(parsedScenarios, "Auto-Commit: Inline schema editor update");
     } else {
       alert("Cannot apply changes. Please fix the validation errors first.");
     }
