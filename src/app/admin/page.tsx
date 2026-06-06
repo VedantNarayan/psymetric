@@ -127,7 +127,7 @@ export default function AdminConsole() {
   // Auth & View Roles
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [currentRole, setCurrentRole] = useState<'super_admin' | 'school_admin'>('school_admin');
+  const [currentRole, setCurrentRole] = useState<'super_admin' | 'school_admin'>('super_admin');
 
   // User Profile States
   const [profileData, setProfileData] = useState<any>(null);
@@ -146,7 +146,7 @@ export default function AdminConsole() {
   const [activeSchoolId, setActiveSchoolId] = useState<string>('sch1');
   
   // Tab Navigation
-  const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings' | 'schools' | 'users'>('mission_control');
+  const [activeTab, setActiveTab] = useState<'mission_control' | 'explorer' | 'roster_manager' | 'scenarios' | 'school_settings' | 'schools' | 'users'>('scenarios');
 
   // School Specific Info
   const [schoolLogo, setSchoolLogo] = useState<string>('/psymetric-icon.png');
