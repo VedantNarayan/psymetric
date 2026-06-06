@@ -121,6 +121,12 @@ const generateUUID = () => {
   });
 };
 
+// UUID format validator: must be exactly 8-4-4-4-12 hex characters
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isValidUUID = (id: string | null | undefined): boolean => {
+  return !!id && UUID_REGEX.test(id);
+};
+
 export default function AdminConsole() {
   const router = useRouter();
   
@@ -488,9 +494,10 @@ export default function AdminConsole() {
         const existingScen = dbScenarios.find((x: any) => x.id === s.id || x.title === s.title);
         if (existingScen && !assignedIds.has(existingScen.id)) {
           sId = existingScen.id;
-        } else if (sId && sId.length >= 10 && !assignedIds.has(sId)) {
-          // Keep JSON ID if unique and valid
+        } else if (isValidUUID(sId) && !assignedIds.has(sId)) {
+          // Keep JSON ID if valid UUID and unique
         } else {
+          if (sId && !isValidUUID(sId)) console.warn(`Scenario has invalid UUID "${sId}", generating new one.`);
           sId = generateUUID();
         }
         assignedIds.add(sId);
@@ -508,9 +515,10 @@ export default function AdminConsole() {
           
           if (existingQ && !assignedIds.has(existingQ.id)) {
             qId = existingQ.id;
-          } else if (qId && qId.length >= 10 && !qId.startsWith('temp_') && !qId.startsWith('q_') && !assignedIds.has(qId)) {
-            // Keep JSON ID if unique and valid
+          } else if (isValidUUID(qId) && !qId.startsWith('temp_') && !qId.startsWith('q_') && !assignedIds.has(qId)) {
+            // Keep JSON ID if valid UUID and unique
           } else {
+            if (qId && !isValidUUID(qId)) console.warn(`Question has invalid UUID "${qId}", generating new one.`);
             qId = generateUUID();
           }
           assignedIds.add(qId);
@@ -528,9 +536,10 @@ export default function AdminConsole() {
             
             if (existingO && !assignedIds.has(existingO.id)) {
               oId = existingO.id;
-            } else if (oId && oId.length >= 10 && !oId.startsWith('temp_') && !oId.startsWith('opt_') && !assignedIds.has(oId)) {
-              // Keep JSON ID if unique and valid
+            } else if (isValidUUID(oId) && !oId.startsWith('temp_') && !oId.startsWith('opt_') && !assignedIds.has(oId)) {
+              // Keep JSON ID if valid UUID and unique
             } else {
+              if (oId && !isValidUUID(oId)) console.warn(`Option has invalid UUID "${oId}", generating new one.`);
               oId = generateUUID();
             }
             assignedIds.add(oId);
