@@ -7,7 +7,7 @@ import {
   BarChart3, Settings, Video, Upload, Shield, 
   Trash2, Plus, Sparkles, Sliders, Users, 
   Activity, Clock, ShieldAlert, GraduationCap, Building, Loader2, Pencil,
-  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen, Archive
+  Search, Filter, CheckCircle, AlertTriangle, FileText, Download, UserCheck, Key, Eye, HelpCircle, Coins, FolderOpen, Archive, LogOut, ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fallbackScenarios } from '@/lib/supabase/fallbackData';
@@ -128,6 +128,19 @@ export default function AdminConsole() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentRole, setCurrentRole] = useState<'super_admin' | 'school_admin'>('school_admin');
+
+  // User Profile States
+  const [profileData, setProfileData] = useState<any>(null);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [profileSettingsModalOpen, setProfileSettingsModalOpen] = useState(false);
+  
+  // Form states for profile edit modal
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editFullName, setEditFullName] = useState('');
+  const [editGender, setEditGender] = useState('');
+  const [editDateOfBirth, setEditDateOfBirth] = useState('');
+  const [editAvatarUrl, setEditAvatarUrl] = useState('');
 
   // Active School ID state for database operations
   const [activeSchoolId, setActiveSchoolId] = useState<string>('sch1');
@@ -599,6 +612,62 @@ export default function AdminConsole() {
     reader.readAsText(file);
   };
 
+  const openProfileSettingsModal = () => {
+    if (!profileData) return;
+    setEditFirstName(profileData.first_name || '');
+    setEditLastName(profileData.last_name || '');
+    setEditFullName(profileData.full_name || '');
+    setEditGender(profileData.gender || 'Prefer not to say');
+    setEditDateOfBirth(profileData.date_of_birth || '');
+    setEditAvatarUrl(profileData.avatar_url || '');
+    setProfileSettingsModalOpen(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profileData) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const updatedFields = {
+        first_name: editFirstName.trim(),
+        last_name: editLastName.trim(),
+        full_name: editFullName.trim() || `${editFirstName.trim()} ${editLastName.trim()}`.trim(),
+        gender: editGender,
+        date_of_birth: editDateOfBirth || null,
+        avatar_url: editAvatarUrl
+      };
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(updatedFields)
+        .eq('id', session.user.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setProfileData(data);
+      alert('Profile updated successfully!');
+      setProfileSettingsModalOpen(false);
+    } catch (err: any) {
+      console.error('Error saving profile:', err);
+      alert('Failed to update profile: ' + err.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      router.push('/auth');
+    } catch (err: any) {
+      console.error('Logout error:', err);
+      alert('Failed to log out: ' + err.message);
+    }
+  };
+
   const fetchVersionsAndBackups = async () => {
     try {
       const { data: commitsData } = await supabase
@@ -846,6 +915,7 @@ export default function AdminConsole() {
             .eq('id', session.user.id)
             .single();
           profile = data;
+          setProfileData(data);
         } catch (err) {
           console.warn('Failed to retrieve profile:', err);
         }
@@ -1801,12 +1871,77 @@ export default function AdminConsole() {
           </nav>
         </div>
 
-        <button 
-          onClick={() => router.push('/assessment')}
-          className="w-full bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-xs font-semibold py-2.5 rounded-xl transition-all"
-        >
-          View Student Workspace
-        </button>
+        {/* User Profile & Workspace controls */}
+        <div className="space-y-3 mt-auto w-full pt-4 border-t border-zinc-900">
+          {profileData && (
+            <div className="relative">
+              {/* Dropdown Menu */}
+              {profileDropdownOpen && (
+                <div className="absolute bottom-full left-0 w-full mb-2 bg-zinc-950 border border-zinc-850 rounded-2xl p-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.5)] z-50 animate-fade-in space-y-1">
+                  <button
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      openProfileSettingsModal();
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-zinc-300 hover:bg-zinc-900 hover:text-white transition-all flex items-center gap-2"
+                  >
+                    <Settings className="w-3.5 h-3.5 text-zinc-400" /> Profile Settings
+                  </button>
+                  <button
+                    onClick={() => {
+                      setProfileDropdownOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-red-400 hover:bg-red-950/20 hover:text-red-300 transition-all flex items-center gap-2"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-red-400" /> Log Out
+                  </button>
+                </div>
+              )}
+
+              {/* Profile trigger button */}
+              <button
+                onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                className="w-full text-left p-2 rounded-xl bg-zinc-900/20 border border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/40 transition-all flex items-center gap-2.5 active:scale-98"
+              >
+                {/* Avatar */}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black text-white shrink-0 ${
+                  profileData.avatar_url && profileData.avatar_url.startsWith('bg-') 
+                    ? profileData.avatar_url 
+                    : 'bg-gradient-to-tr from-purple-600 to-indigo-600 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                }`}>
+                  {profileData.avatar_url && !profileData.avatar_url.startsWith('bg-') ? (
+                    <img src={profileData.avatar_url} alt="Avatar" className="w-full h-full object-cover rounded-lg" />
+                  ) : (
+                    <span className="text-[11px] font-black uppercase">
+                      {(profileData.first_name?.[0] || '') + (profileData.last_name?.[0] || profileData.email?.[0] || 'U')}
+                    </span>
+                  )}
+                </div>
+
+                {/* Profile Text */}
+                <div className="flex-1 min-w-0">
+                  <span className="text-[11px] font-black text-white block truncate leading-tight">
+                    {profileData.full_name || `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim() || 'User Profile'}
+                  </span>
+                  <span className="text-[9px] font-bold text-zinc-500 truncate block">
+                    {profileData.email || 'Admin Profile'}
+                  </span>
+                </div>
+                
+                {/* Chevron icon */}
+                <ChevronUp className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+              </button>
+            </div>
+          )}
+
+          <button 
+            onClick={() => router.push('/assessment')}
+            className="w-full bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-xs font-semibold py-2.5 rounded-xl transition-all"
+          >
+            View Student Workspace
+          </button>
+        </div>
       </div>
 
       {/* ──── MAIN CONTENT WORKSPACE AREA ──── */}
@@ -4885,6 +5020,177 @@ export default function AdminConsole() {
                   Close Audit
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Profile Settings Modal */}
+        {profileSettingsModalOpen && (
+          <div className="fixed inset-0 z-55 flex items-center justify-center p-4 overflow-y-auto">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setProfileSettingsModalOpen(false)}
+              className="fixed inset-0 bg-black/85 backdrop-blur-sm"
+            />
+            
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-zinc-950 border border-zinc-850 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl p-6 my-8 space-y-6 max-h-[85vh] overflow-y-auto z-10"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-teal-500 via-purple-500 to-indigo-500" />
+              
+              <div className="flex justify-between items-start">
+                <div className="text-left">
+                  <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-teal-400" /> Edit My Profile
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-1 font-semibold">Update your profile settings and avatar gradient theme.</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveProfile} className="space-y-4 text-left">
+                {/* Email (Read Only) */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Email Address (Read-Only)</label>
+                  <input
+                    type="email"
+                    value={profileData?.email || ''}
+                    disabled
+                    className="w-full bg-zinc-900/30 border border-zinc-900 text-zinc-650 px-4 py-2.5 rounded-xl text-xs outline-none cursor-not-allowed font-semibold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* First Name */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">First Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editFirstName}
+                      onChange={(e) => setEditFirstName(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-850 hover:border-zinc-800 focus:border-teal-500/50 text-white px-4 py-2.5 rounded-xl text-xs outline-none transition-all font-semibold"
+                    />
+                  </div>
+
+                  {/* Last Name */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Last Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={editLastName}
+                      onChange={(e) => setEditLastName(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-850 hover:border-zinc-800 focus:border-teal-500/50 text-white px-4 py-2.5 rounded-xl text-xs outline-none transition-all font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Display Name */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Display Name</label>
+                  <input
+                    type="text"
+                    value={editFullName}
+                    onChange={(e) => setEditFullName(e.target.value)}
+                    placeholder={`${editFirstName} ${editLastName}`.trim()}
+                    className="w-full bg-zinc-900 border border-zinc-850 hover:border-zinc-800 focus:border-teal-500/50 text-white px-4 py-2.5 rounded-xl text-xs outline-none transition-all font-semibold"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Gender */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Gender</label>
+                    <select
+                      value={editGender}
+                      onChange={(e) => setEditGender(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-850 hover:border-zinc-800 focus:border-teal-500/50 text-white px-4 py-2.5 rounded-xl text-xs outline-none transition-all font-semibold"
+                    >
+                      <option value="Prefer not to say">Prefer not to say</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Non-binary">Non-binary</option>
+                    </select>
+                  </div>
+
+                  {/* Date of Birth */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={editDateOfBirth}
+                      onChange={(e) => setEditDateOfBirth(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-850 hover:border-zinc-800 focus:border-teal-500/50 text-white px-4 py-2.5 rounded-xl text-xs outline-none transition-all font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Avatar Style Picker */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-wider block">Avatar Gradient Theme</label>
+                  
+                  {/* Preset list */}
+                  <div className="grid grid-cols-6 gap-2">
+                    {[
+                      { name: 'Purple/Indigo', class: 'bg-gradient-to-tr from-purple-600 to-indigo-600' },
+                      { name: 'Teal/Green', class: 'bg-gradient-to-tr from-teal-500 to-emerald-500' },
+                      { name: 'Sunset Orange', class: 'bg-gradient-to-tr from-orange-500 to-rose-500' },
+                      { name: 'Pink Cyberpunk', class: 'bg-gradient-to-tr from-pink-500 to-purple-600' },
+                      { name: 'Ocean Blue', class: 'bg-gradient-to-tr from-blue-600 to-cyan-500' },
+                      { name: 'Golden Glow', class: 'bg-gradient-to-tr from-yellow-500 to-amber-600' }
+                    ].map((theme) => (
+                      <button
+                        key={theme.name}
+                        type="button"
+                        onClick={() => setEditAvatarUrl(theme.class)}
+                        title={theme.name}
+                        className={`w-full aspect-square rounded-xl transition-all border-2 relative ${theme.class} ${
+                          editAvatarUrl === theme.class 
+                            ? 'border-white scale-105 shadow-[0_0_12px_rgba(255,255,255,0.3)]' 
+                            : 'border-transparent hover:scale-102 hover:border-zinc-700'
+                        }`}
+                      >
+                        {editAvatarUrl === theme.class && (
+                          <span className="absolute inset-0 m-auto w-1.5 h-1.5 rounded-full bg-white shadow-md" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Or Custom URL */}
+                  <div className="space-y-1 pt-1">
+                    <label className="text-[9px] text-zinc-500 font-bold uppercase block">Or Custom Image URL</label>
+                    <input
+                      type="url"
+                      placeholder="https://images.unsplash.com/photo-..."
+                      value={editAvatarUrl.startsWith('bg-') ? '' : editAvatarUrl}
+                      onChange={(e) => setEditAvatarUrl(e.target.value)}
+                      className="w-full bg-zinc-900 border border-zinc-850 hover:border-zinc-800 focus:border-teal-500/50 text-white px-4 py-2 rounded-xl text-[11px] outline-none transition-all font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setProfileSettingsModalOpen(false)}
+                    className="px-5 py-2 rounded-xl bg-zinc-900 border border-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-black font-black transition-all text-xs"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

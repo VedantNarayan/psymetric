@@ -8,32 +8,45 @@ async function assertSuperAdmin(request: Request) {
     throw new Error('Missing authorization header');
   }
 
-  // Verify user token
-  const clientSupabase = createServerSupabase(authHeader);
-  const { data: { user }, error: userError } = await clientSupabase.auth.getUser();
-  if (userError || !user) {
-    throw new Error('Invalid user token');
+  const token = authHeader.replace('Bearer ', '');
+  const clientSupabase = createServerSupabase(); // Initialize without header to avoid conflicts
+  
+  // Set the session explicitly so that all subsequent DB/Postgrest requests are authenticated
+  const { data: { user }, error: sessionError } = await clientSupabase.auth.setSession({
+    access_token: token,
+    refresh_token: ''
+  });
+
+  if (sessionError || !user) {
+    throw new Error(`Invalid user token: ${sessionError?.message || 'No user found'}`);
   }
 
-  // Query database profiles securely
-  const serviceSupabase = createServerSupabase();
-  const { data: profile, error: profileError } = await serviceSupabase
+  // Query database profiles securely using the verified user token client
+  const { data: profile, error: profileError } = await clientSupabase
     .from('profiles')
     .select('user_type, is_admin')
     .eq('id', user.id)
     .single();
 
-  if (profileError || !profile || (profile.user_type !== 'super_admin' && !profile.is_admin)) {
-    throw new Error('Forbidden: Super Admin privileges required');
+  if (profileError) {
+    throw new Error(`Forbidden: Super Admin privileges required (Profile Query Error: ${profileError.message}, Code: ${profileError.code})`);
   }
 
-  return { user, serviceSupabase };
+  if (!profile) {
+    throw new Error(`Forbidden: Super Admin privileges required (Profile row not found for user ${user.id})`);
+  }
+
+  if (profile.user_type !== 'super_admin' && !profile.is_admin) {
+    throw new Error(`Forbidden: Super Admin privileges required (User type: ${profile.user_type}, is_admin: ${profile.is_admin})`);
+  }
+
+  return { user, clientSupabase };
 }
 
 // GET: Trigger manual backup immediately
 export async function GET(request: Request) {
   try {
-    const { serviceSupabase } = await assertSuperAdmin(request);
+    const { clientSupabase } = await assertSuperAdmin(request);
 
     // 1. Fetch data from all 14 tables
     const [
@@ -52,20 +65,20 @@ export async function GET(request: Request) {
       { data: assessmentSessions },
       { data: candidateResponses }
     ] = await Promise.all([
-      serviceSupabase.from('profiles').select('*'),
-      serviceSupabase.from('schools').select('*'),
-      serviceSupabase.from('school_classes').select('*'),
-      serviceSupabase.from('student_roster').select('*'),
-      serviceSupabase.from('scenarios').select('*'),
-      serviceSupabase.from('questions').select('*'),
-      serviceSupabase.from('options').select('*'),
-      serviceSupabase.from('teacher_class_access').select('*'),
-      serviceSupabase.from('parent_student_links').select('*'),
-      serviceSupabase.from('student_tags').select('*'),
-      serviceSupabase.from('assessment_credits').select('*'),
-      serviceSupabase.from('assessment_plans').select('*'),
-      serviceSupabase.from('assessment_sessions').select('*'),
-      serviceSupabase.from('candidate_responses').select('*')
+      clientSupabase.from('profiles').select('*'),
+      clientSupabase.from('schools').select('*'),
+      clientSupabase.from('school_classes').select('*'),
+      clientSupabase.from('student_roster').select('*'),
+      clientSupabase.from('scenarios').select('*'),
+      clientSupabase.from('questions').select('*'),
+      clientSupabase.from('options').select('*'),
+      clientSupabase.from('teacher_class_access').select('*'),
+      clientSupabase.from('parent_student_links').select('*'),
+      clientSupabase.from('student_tags').select('*'),
+      clientSupabase.from('assessment_credits').select('*'),
+      clientSupabase.from('assessment_plans').select('*'),
+      clientSupabase.from('assessment_sessions').select('*'),
+      clientSupabase.from('candidate_responses').select('*')
     ]);
 
     const backupData = {
@@ -90,7 +103,7 @@ export async function GET(request: Request) {
     const jsonString = JSON.stringify(backupData, null, 2);
 
     // 2. Upload JSON to private storage bucket 'backups'
-    const { error: uploadError } = await serviceSupabase.storage
+    const { error: uploadError } = await clientSupabase.storage
       .from('backups')
       .upload(backupName, jsonString, {
         contentType: 'application/json',
@@ -101,7 +114,7 @@ export async function GET(request: Request) {
     if (uploadError) throw uploadError;
 
     // 3. Log the backup
-    const { error: logError } = await serviceSupabase.from('system_backups').insert({
+    const { error: logError } = await clientSupabase.from('system_backups').insert({
       backup_name: backupName,
       backup_type: 'Manual',
       status: 'Success',
@@ -125,14 +138,14 @@ export async function GET(request: Request) {
 // POST: Restore system from a backup file
 export async function POST(request: Request) {
   try {
-    const { serviceSupabase } = await assertSuperAdmin(request);
+    const { clientSupabase } = await assertSuperAdmin(request);
     const { filePath } = await request.json();
     if (!filePath) {
       return NextResponse.json({ error: 'Missing filePath parameter' }, { status: 400 });
     }
 
     // 1. Download backup JSON file from the bucket
-    const { data: fileData, error: downloadError } = await serviceSupabase.storage
+    const { data: fileData, error: downloadError } = await clientSupabase.storage
       .from('backups')
       .download(filePath);
 
@@ -144,76 +157,76 @@ export async function POST(request: Request) {
     const backup = JSON.parse(fileText);
 
     // 2. Clear existing records in correct order of dependency (child to parent)
-    await serviceSupabase.from('candidate_responses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('assessment_sessions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('assessment_credits').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('assessment_plans').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('student_tags').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('parent_student_links').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('teacher_class_access').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('student_roster').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('school_classes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('options').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('questions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('scenarios').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('profiles').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await serviceSupabase.from('schools').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('candidate_responses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('assessment_sessions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('assessment_credits').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('assessment_plans').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('student_tags').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('parent_student_links').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('teacher_class_access').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('student_roster').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('school_classes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('options').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('questions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('scenarios').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('profiles').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    await clientSupabase.from('schools').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
     // 3. Restore records sequentially (parent to child to avoid foreign key errors)
     if (backup.schools?.length > 0) {
-      const { error } = await serviceSupabase.from('schools').insert(backup.schools);
+      const { error } = await clientSupabase.from('schools').insert(backup.schools);
       if (error) throw new Error(`Schools restore: ${error.message}`);
     }
     if (backup.profiles?.length > 0) {
-      const { error } = await serviceSupabase.from('profiles').insert(backup.profiles);
+      const { error } = await clientSupabase.from('profiles').insert(backup.profiles);
       if (error) throw new Error(`Profiles restore: ${error.message}`);
     }
     if (backup.scenarios?.length > 0) {
-      const { error } = await serviceSupabase.from('scenarios').insert(backup.scenarios);
+      const { error } = await clientSupabase.from('scenarios').insert(backup.scenarios);
       if (error) throw new Error(`Scenarios restore: ${error.message}`);
     }
     if (backup.questions?.length > 0) {
-      const { error } = await serviceSupabase.from('questions').insert(backup.questions);
+      const { error } = await clientSupabase.from('questions').insert(backup.questions);
       if (error) throw new Error(`Questions restore: ${error.message}`);
     }
     if (backup.options?.length > 0) {
-      const { error } = await serviceSupabase.from('options').insert(backup.options);
+      const { error } = await clientSupabase.from('options').insert(backup.options);
       if (error) throw new Error(`Options restore: ${error.message}`);
     }
     if (backup.school_classes?.length > 0) {
-      const { error } = await serviceSupabase.from('school_classes').insert(backup.school_classes);
+      const { error } = await clientSupabase.from('school_classes').insert(backup.school_classes);
       if (error) throw new Error(`School Classes restore: ${error.message}`);
     }
     if (backup.student_roster?.length > 0) {
-      const { error } = await serviceSupabase.from('student_roster').insert(backup.student_roster);
+      const { error } = await clientSupabase.from('student_roster').insert(backup.student_roster);
       if (error) throw new Error(`Student Roster restore: ${error.message}`);
     }
     if (backup.teacher_class_access?.length > 0) {
-      const { error } = await serviceSupabase.from('teacher_class_access').insert(backup.teacher_class_access);
+      const { error } = await clientSupabase.from('teacher_class_access').insert(backup.teacher_class_access);
       if (error) throw new Error(`Teacher Class Access restore: ${error.message}`);
     }
     if (backup.parent_student_links?.length > 0) {
-      const { error } = await serviceSupabase.from('parent_student_links').insert(backup.parent_student_links);
+      const { error } = await clientSupabase.from('parent_student_links').insert(backup.parent_student_links);
       if (error) throw new Error(`Parent Links restore: ${error.message}`);
     }
     if (backup.student_tags?.length > 0) {
-      const { error } = await serviceSupabase.from('student_tags').insert(backup.student_tags);
+      const { error } = await clientSupabase.from('student_tags').insert(backup.student_tags);
       if (error) throw new Error(`Student Tags restore: ${error.message}`);
     }
     if (backup.assessment_plans?.length > 0) {
-      const { error } = await serviceSupabase.from('assessment_plans').insert(backup.assessment_plans);
+      const { error } = await clientSupabase.from('assessment_plans').insert(backup.assessment_plans);
       if (error) throw new Error(`Plans restore: ${error.message}`);
     }
     if (backup.assessment_credits?.length > 0) {
-      const { error } = await serviceSupabase.from('assessment_credits').insert(backup.assessment_credits);
+      const { error } = await clientSupabase.from('assessment_credits').insert(backup.assessment_credits);
       if (error) throw new Error(`Credits restore: ${error.message}`);
     }
     if (backup.assessment_sessions?.length > 0) {
-      const { error } = await serviceSupabase.from('assessment_sessions').insert(backup.assessment_sessions);
+      const { error } = await clientSupabase.from('assessment_sessions').insert(backup.assessment_sessions);
       if (error) throw new Error(`Sessions restore: ${error.message}`);
     }
     if (backup.candidate_responses?.length > 0) {
-      const { error } = await serviceSupabase.from('candidate_responses').insert(backup.candidate_responses);
+      const { error } = await clientSupabase.from('candidate_responses').insert(backup.candidate_responses);
       if (error) throw new Error(`Responses restore: ${error.message}`);
     }
 
@@ -227,7 +240,7 @@ export async function POST(request: Request) {
 // DELETE: Delete a backup record and its storage file
 export async function DELETE(request: Request) {
   try {
-    const { serviceSupabase } = await assertSuperAdmin(request);
+    const { clientSupabase } = await assertSuperAdmin(request);
     const { id, filePath } = await request.json();
 
     if (!id || !filePath) {
@@ -235,7 +248,7 @@ export async function DELETE(request: Request) {
     }
 
     // 1. Delete file from storage bucket
-    const { error: storageError } = await serviceSupabase.storage
+    const { error: storageError } = await clientSupabase.storage
       .from('backups')
       .remove([filePath]);
 
@@ -244,7 +257,7 @@ export async function DELETE(request: Request) {
     }
 
     // 2. Delete database log entry
-    const { error: dbError } = await serviceSupabase
+    const { error: dbError } = await clientSupabase
       .from('system_backups')
       .delete()
       .eq('id', id);
