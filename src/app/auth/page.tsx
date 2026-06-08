@@ -57,6 +57,7 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [signUpEmail, setSignUpEmail] = useState('');
 
   // Access Code input
   const [accessCode, setAccessCode] = useState('');
@@ -135,14 +136,16 @@ export default function AuthPage() {
         const className = classSec.slice(0, 2);
         const sectionName = classSec.slice(2) || 'A';
 
-        setClaimedCodeDetails({
+        const details = {
           firstName: firstNameMock,
           lastName: lastNameMock,
           school: schoolCode === 'DAV' ? 'DAV Public School' : schoolCode + ' School',
           className: className,
           sectionName: sectionName,
           email: `${firstNameMock.toLowerCase()}.${lastNameMock.toLowerCase()}@school.edu`
-        });
+        };
+        setClaimedCodeDetails(details);
+        setSignUpEmail(details.email);
       } else {
         setCodeError('Roster code not found in our pre-enrolled files. Please contact your school admin.');
       }
@@ -164,7 +167,7 @@ export default function AuthPage() {
     try {
       // Offline fallback profile creation
       const { data, error } = await supabase.auth.signUp({
-        email: claimedCodeDetails.email,
+        email: signUpEmail || claimedCodeDetails.email,
         password: password,
         options: {
           data: {
@@ -207,7 +210,7 @@ export default function AuthPage() {
 
     setLoading(true);
 
-    const calculatedEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`;
+    const calculatedEmail = signUpEmail || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`;
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -258,7 +261,7 @@ export default function AuthPage() {
 
     setLoading(true);
 
-    const calculatedEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@solo.me`;
+    const calculatedEmail = signUpEmail || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@solo.me`;
 
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -455,7 +458,7 @@ export default function AuthPage() {
                 <p>
                   First time evaluator?{' '}
                   <button
-                    onClick={() => { setIsSignUp(true); setSignUpFlow('options'); setPassword(''); setConfirmPassword(''); }}
+                    onClick={() => { setIsSignUp(true); setSignUpFlow('options'); setPassword(''); setConfirmPassword(''); setSignUpEmail(''); }}
                     className="text-purple-400 hover:text-purple-300 font-medium hover:underline"
                   >
                     Create Account
@@ -520,7 +523,7 @@ export default function AuthPage() {
                   </div>
 
                   <div className="text-center text-sm text-zinc-500 pt-4 border-t border-zinc-900">
-                    <button onClick={() => { setIsSignUp(false); setPassword(''); setConfirmPassword(''); }} className="hover:underline">Already registered? Sign In</button>
+                    <button onClick={() => { setIsSignUp(false); setPassword(''); setConfirmPassword(''); setSignUpEmail(''); }} className="hover:underline">Already registered? Sign In</button>
                   </div>
                 </div>
               )}
@@ -567,6 +570,18 @@ export default function AuthPage() {
                         <p className="text-xs text-zinc-400 mt-1">
                           Class {claimedCodeDetails.className}-{claimedCodeDetails.sectionName} at {claimedCodeDetails.school}
                         </p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="name@school.edu"
+                          value={signUpEmail}
+                          onChange={(e) => setSignUpEmail(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                        />
                       </div>
 
                       <div className="space-y-1">
@@ -870,7 +885,10 @@ export default function AuthPage() {
                       <button
                         type="button"
                         disabled={!firstName || !lastName || !gender || !dob}
-                        onClick={() => setStep(6)}
+                        onClick={() => {
+                          setSignUpEmail(`${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`);
+                          setStep(6);
+                        }}
                         className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
                       >
                         Next Step
@@ -887,6 +905,18 @@ export default function AuthPage() {
                         <p><strong className="text-teal-400">School:</strong> {selectedSchool}</p>
                         <p><strong className="text-teal-400">Class:</strong> Class {selectedClass}-{selectedSection} {selectedStream ? `• ${selectedStream}` : ''}</p>
                         <p><strong className="text-teal-400">Student Name:</strong> {firstName} {lastName}</p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="student@school.edu"
+                          value={signUpEmail}
+                          onChange={(e) => setSignUpEmail(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                        />
                       </div>
 
                       <div className="space-y-1">
@@ -1028,6 +1058,18 @@ export default function AuthPage() {
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-zinc-500 uppercase">Email Address</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="name@example.com"
+                      value={signUpEmail}
+                      onChange={(e) => setSignUpEmail(e.target.value)}
+                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    />
                   </div>
 
                   <div className="space-y-1">

@@ -181,10 +181,10 @@ export default function StudentDashboard() {
 
         if (prof) {
           setProfile({
-            full_name: `${prof.first_name || ''} ${prof.last_name || ''}`.trim() || prof.email?.split('@')[0] || 'Student User',
-            age_tier: prof.age_group || '16-18',
-            institution_type: prof.school_id ? 'School' : 'Individual',
-            school_name: prof.school_id ? 'DAV Public School' : 'Individual Portal',
+            full_name: prof.full_name || 'Student User',
+            age_tier: prof.age_tier || '16-18',
+            institution_type: prof.institution_type || 'Individual',
+            school_name: prof.institution_type === 'School' ? 'DAV Public School' : 'Individual Portal',
             class: prof.class_id ? '10' : null,
             section: 'A',
             stream: null,
@@ -493,10 +493,12 @@ export default function StudentDashboard() {
             >
               <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-purple-500 to-teal-400 p-[1.5px]">
                 <div className="w-full h-full bg-[#05050c] rounded-lg flex items-center justify-center text-[10px] font-bold text-teal-300">
-                  VN
+                  {profile?.full_name ? profile.full_name.split(' ').filter(Boolean).map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : 'ST'}
                 </div>
               </div>
-              <span className="text-xs font-semibold text-zinc-300 hidden sm:inline-block pr-1">Vedant</span>
+              <span className="text-xs font-semibold text-zinc-300 hidden sm:inline-block pr-1">
+                {profile?.full_name?.split(' ')[0] || 'Student'}
+              </span>
             </button>
 
             <AnimatePresence>
@@ -861,17 +863,17 @@ export default function StudentDashboard() {
                           </div>
 
                           <div className="p-4 rounded-xl bg-zinc-950/40 border border-zinc-900 text-xs leading-relaxed text-zinc-300">
-                            {MOCK_REPORT.ai_analysis.psychological_feedback}
+                            {report?.ai_analysis?.psychological_feedback?.replace(/Vedant/g, profile?.full_name?.split(' ')[0] || 'Student') || MOCK_REPORT.ai_analysis.psychological_feedback}
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-3">
                               <h4 className="text-[10px] font-bold text-teal-400 uppercase tracking-widest">Cognitive Strengths</h4>
                               <ul className="space-y-2 text-xs text-zinc-400">
-                                {MOCK_REPORT.ai_analysis.cognitive_strengths.map((str, idx) => (
+                                {(report?.ai_analysis?.cognitive_strengths || MOCK_REPORT.ai_analysis.cognitive_strengths).map((str: string, idx: number) => (
                                   <li key={idx} className="flex items-start gap-2">
                                     <span className="text-teal-400 font-bold">•</span>
-                                    <span>{str}</span>
+                                    <span>{str.replace(/Vedant/g, profile?.full_name?.split(' ')[0] || 'Student')}</span>
                                   </li>
                                 ))}
                               </ul>
@@ -879,10 +881,10 @@ export default function StudentDashboard() {
                             <div className="space-y-3">
                               <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-widest">Growth Fields</h4>
                               <ul className="space-y-2 text-xs text-zinc-400">
-                                {MOCK_REPORT.ai_analysis.growth_areas.map((gro, idx) => (
+                                {(report?.ai_analysis?.growth_areas || MOCK_REPORT.ai_analysis.growth_areas).map((gro: string, idx: number) => (
                                   <li key={idx} className="flex items-start gap-2">
                                     <span className="text-purple-400 font-bold">•</span>
-                                    <span>{gro}</span>
+                                    <span>{gro.replace(/Vedant/g, profile?.full_name?.split(' ')[0] || 'Student')}</span>
                                   </li>
                                 ))}
                               </ul>
