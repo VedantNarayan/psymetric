@@ -176,7 +176,7 @@ export default function StudentDashboard() {
           .from('assessment_sessions')
           .select('*')
           .eq('user_id', authSession.user.id)
-          .order('started_at', { ascending: false })
+          .order('created_at', { ascending: false })
           .limit(1);
 
         const meta = authSession.user.user_metadata;

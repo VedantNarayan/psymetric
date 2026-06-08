@@ -118,42 +118,61 @@ export default function AuthPage() {
   }, [router]);
 
   // Validate Access Code
-  const handleVerifyAccessCode = (e: React.FormEvent) => {
+  const handleVerifyAccessCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setCodeError('');
-    if (!accessCode.startsWith('PSY-')) {
-      setCodeError('Invalid code format. Codes must begin with PSY-');
+    if (!accessCode.trim()) {
+      setCodeError('Access code cannot be empty.');
       return;
     }
     
-    // Simulate check against roster
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      // Generate mock claims based on code
-      const codeParts = accessCode.split('-');
-      if (codeParts.length >= 3) {
-        const schoolCode = codeParts[1];
-        const classSec = codeParts[2];
-        const firstNameMock = 'Vedant';
-        const lastNameMock = 'Narayan';
-        const className = classSec.slice(0, 2);
-        const sectionName = classSec.slice(2) || 'A';
+    try {
+      const { data: roster, error } = await supabase
+        .from('student_roster')
+        .select(`
+          id,
+          first_name,
+          last_name,
+          is_claimed,
+          schools ( name ),
+          school_classes ( class_name, section_name )
+        `)
+        .eq('access_code', accessCode.trim())
+        .maybeSingle();
 
-        const details = {
-          firstName: firstNameMock,
-          lastName: lastNameMock,
-          school: schoolCode === 'DAV' ? 'DAV Public School' : schoolCode + ' School',
-          className: className,
-          sectionName: sectionName,
-          email: `${firstNameMock.toLowerCase()}.${lastNameMock.toLowerCase()}@school.edu`
-        };
-        setClaimedCodeDetails(details);
-        setSignUpEmail(details.email);
-      } else {
-        setCodeError('Roster code not found in our pre-enrolled files. Please contact your school admin.');
+      if (error) throw error;
+
+      if (!roster) {
+        setCodeError('Access code not found. Please verify the code or contact your school administrator.');
+        return;
       }
-    }, 1000);
+
+      if (roster.is_claimed) {
+        setCodeError('This access code has already been claimed and registered.');
+        return;
+      }
+
+      const schoolVal = roster.schools ? (Array.isArray(roster.schools) ? roster.schools[0]?.name : (roster.schools as any).name) : 'School';
+      const classVal = roster.school_classes ? (Array.isArray(roster.school_classes) ? roster.school_classes[0]?.class_name : (roster.school_classes as any).class_name) : '';
+      const sectionVal = roster.school_classes ? (Array.isArray(roster.school_classes) ? roster.school_classes[0]?.section_name : (roster.school_classes as any).section_name) : '';
+
+      const details = {
+        id: roster.id,
+        firstName: roster.first_name,
+        lastName: roster.last_name,
+        school: schoolVal,
+        className: classVal,
+        sectionName: sectionVal,
+        email: `${roster.first_name.toLowerCase()}.${roster.last_name.toLowerCase()}@school.edu`
+      };
+      setClaimedCodeDetails(details);
+      setSignUpEmail(details.email);
+    } catch (err: any) {
+      setCodeError(err.message || 'Error checking access code. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClaimAccount = async (e: React.FormEvent) => {
@@ -398,894 +417,1188 @@ export default function AuthPage() {
     );
   };
 
-  return (
-    <div className="relative min-h-screen w-full flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8 bg-[#030303] overflow-hidden mesh-gradient">
-      {/* Background glowing circles */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl -z-10" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-600/10 rounded-full blur-3xl -z-10" />
+  const [activeSlide, setActiveSlide] = useState(0);
+  const slides = [
+    {
+      title: "Discover Your Archetype",
+      description: "Complete cinematic decision scenarios to map your RIASEC character constellation and cognitive traits."
+    },
+    {
+      title: "Explore Premium Paths",
+      description: "Filter and analyze career dimensions, salary statistics, and industry growth vectors tailored for you."
+    },
+    {
+      title: "Connect with Experts",
+      description: "Chat in peer guilds or schedule informational sessions with verified mentors from leading companies."
+    }
+  ];
 
-      {/* Header Branding */}
-      <header className="max-w-7xl mx-auto w-full px-6 flex items-center justify-between z-50 mb-10">
-        <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setActiveSlide(prev => (prev + 1) % slides.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getPasswordStrength = (pwd: string) => {
+    if (!pwd) return { score: 0, label: '', color: 'bg-zinc-800' };
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/[0-9]/.test(pwd)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+    
+    switch (score) {
+      case 0:
+      case 1:
+        return { score: 25, label: 'Weak', color: 'bg-red-500' };
+      case 2:
+        return { score: 50, label: 'Fair', color: 'bg-orange-500' };
+      case 3:
+        return { score: 75, label: 'Good', color: 'bg-yellow-500' };
+      case 4:
+        return { score: 100, label: 'Strong', color: 'bg-teal-400' };
+      default:
+        return { score: 0, label: '', color: 'bg-zinc-800' };
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`
+        }
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Google Sign-In failed.');
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen w-full flex flex-col lg:flex-row bg-[#030303] overflow-hidden">
+      
+      {/* LEFT PANEL: CINEMATIC VISUAL CANVAS (Desktop Only) */}
+      <div className="hidden lg:flex lg:w-5/12 bg-[#05050c] relative flex-col justify-between p-12 border-r border-zinc-900/60 overflow-hidden">
+        {/* Glow meshes */}
+        <div className="absolute top-[-10%] left-[-10%] w-[350px] h-[350px] bg-purple-600/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[350px] h-[350px] bg-teal-600/10 rounded-full blur-3xl" />
+        
+        {/* Header Logo */}
+        <div className="flex items-center gap-2 cursor-pointer z-10" onClick={() => router.push('/')}>
           <img 
             src="/psymetric-logo.png" 
             alt="PsyMetric Logo" 
             className="h-10 w-auto object-contain"
           />
         </div>
-      </header>
 
-      {/* Main Form container */}
-      <div className="flex-1 w-full max-w-xl mx-auto flex items-center justify-center">
-        <div className="w-full glassmorphism p-8 rounded-3xl relative overflow-hidden">
-          <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500/20 to-teal-500/20 rounded-3xl -z-10" />
-
-          {/* Form alert states */}
-          <AnimatePresence mode="wait">
-            {errorMsg && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-900/20 border border-red-500/30 text-red-300 text-sm"
+        {/* Dynamic Rotating Constellation SVG */}
+        <div className="relative flex-1 flex flex-col items-center justify-center">
+          <motion.div 
+            animate={{ rotate: 360 }}
+            transition={{ duration: 80, repeat: Infinity, ease: "linear" }}
+            className="w-72 h-72 opacity-30 absolute mb-20"
+          >
+            <svg className="w-full h-full" viewBox="0 0 300 300">
+              {[0.2, 0.4, 0.6, 0.8, 1.0].map((scale, sIdx) => (
+                <circle key={sIdx} cx="150" cy="150" r={scale * 100} fill="none" stroke="rgba(157, 78, 221, 0.12)" strokeWidth="1" />
+              ))}
+              {[0, 60, 120, 180, 240, 300].map((angle, idx) => {
+                const rad = (angle * Math.PI) / 180;
+                const x = 150 + 100 * Math.cos(rad);
+                const y = 150 + 100 * Math.sin(rad);
+                return <line key={idx} x1="150" y1="150" x2={x} y2={y} stroke="rgba(0, 245, 212, 0.08)" strokeWidth="1" />;
+              })}
+              <polygon 
+                points="150,80 220,120 200,190 120,200 90,140" 
+                fill="rgba(157, 78, 221, 0.03)" 
+                stroke="rgba(0, 245, 212, 0.25)" 
+                strokeWidth="1.5" 
+                strokeDasharray="4 2"
+              />
+              <circle cx="150" cy="80" r="4" fill="#a855f7" />
+              <circle cx="220" cy="120" r="4" fill="#3b82f6" />
+              <circle cx="200" cy="190" r="4" fill="#22c55e" />
+              <circle cx="120" cy="200" r="4" fill="#f59e0b" />
+              <circle cx="90" cy="140" r="4" fill="#ef4444" />
+            </svg>
+          </motion.div>
+          
+          {/* Dynamic Carousel Slide */}
+          <div className="z-10 text-center max-w-sm mt-56 relative h-32 flex flex-col justify-center">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeSlide}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.6 }}
+                className="space-y-2.5"
               >
-                <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                <span>{errorMsg}</span>
+                <h3 className="text-base font-extrabold text-white tracking-wide uppercase">{slides[activeSlide].title}</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed px-4">{slides[activeSlide].description}</p>
               </motion.div>
-            )}
-            {successMsg && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-teal-900/20 border border-teal-500/30 text-teal-300 text-sm"
-              >
-                <ShieldCheck className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />
-                <span>{successMsg}</span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </AnimatePresence>
 
-          {/* FLOW SWITCHER */}
-          {!isSignUp ? (
-            /* ──── SIGN IN FLOW ──── */
-            <div>
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-extrabold text-white mb-2">Welcome Back</h2>
-                <p className="text-sm text-zinc-400">Sign in to resume your character evaluations</p>
-              </div>
-
-              <form onSubmit={handleSignIn} className="space-y-5">
-                {/* Method Selector */}
-                <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setLoginMethod('email')}
-                    className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${loginMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
-                  >
-                    Email Address
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLoginMethod('phone')}
-                    className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${loginMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
-                  >
-                    Phone Number
-                  </button>
-                </div>
-
-                {loginMethod === 'email' ? (
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
-                      <input
-                        type="email"
-                        required
-                        placeholder="name@school.edu"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
-                    <div className="relative">
-                      <Smartphone className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
-                      <input
-                        type="tel"
-                        required
-                        placeholder="+919876543210"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
-                >
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Enter Portal</span><ArrowRight className="w-4 h-4" /></>}
-                </button>
-              </form>
-
-              <div className="mt-8 text-center text-sm text-zinc-400">
-                <p>
-                  First time evaluator?{' '}
-                  <button
-                    onClick={() => { setIsSignUp(true); setSignUpFlow('options'); setPassword(''); setConfirmPassword(''); setSignUpEmail(''); }}
-                    className="text-purple-400 hover:text-purple-300 font-medium hover:underline"
-                  >
-                    Create Account
-                  </button>
-                </p>
-              </div>
-            </div>
-          ) : (
-            /* ──── SIGN UP FLOWS ──── */
-            <div>
-              {/* BACK BUTTON */}
-              {signUpFlow !== 'options' && (
+            {/* Carousel dots */}
+            <div className="flex justify-center gap-1.5 mt-5">
+              {slides.map((_, idx) => (
                 <button 
-                  onClick={() => { setSignUpFlow('options'); setStep(1); }}
-                  className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-semibold mb-6"
+                  key={idx} 
+                  onClick={() => setActiveSlide(idx)}
+                  className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${activeSlide === idx ? 'bg-teal-400 w-4' : 'bg-zinc-700'}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="z-10 text-[10px] text-zinc-600 font-medium">
+          <p>© 2026 PsyMetric Labs. Guided Career Synthesis Portal.</p>
+        </div>
+      </div>
+
+      {/* RIGHT PANEL: FORM SECTION */}
+      <div className="flex-1 min-h-screen overflow-y-auto bg-[#030303] flex flex-col justify-between py-12 px-6 sm:px-12 lg:px-16 relative">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/5 rounded-full blur-3xl -z-10" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-600/5 rounded-full blur-3xl -z-10" />
+
+        {/* Mobile Header Logo */}
+        <div className="flex lg:hidden justify-between items-center z-10 mb-8">
+          <img 
+            src="/psymetric-logo.png" 
+            alt="PsyMetric Logo" 
+            className="h-8 w-auto object-contain cursor-pointer" 
+            onClick={() => router.push('/')}
+          />
+        </div>
+
+        {/* Main form card container */}
+        <div className="flex-1 w-full max-w-lg mx-auto flex items-center justify-center">
+          <div className="w-full glassmorphism p-8 rounded-3xl relative overflow-hidden">
+            <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500/10 to-teal-500/10 rounded-3xl -z-10" />
+
+            {/* Error / Success message alerts */}
+            <AnimatePresence mode="wait">
+              {errorMsg && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-red-900/20 border border-red-500/30 text-red-300 text-sm"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" /> Back to options
-                </button>
+                  <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <span>{errorMsg}</span>
+                </motion.div>
               )}
+              {successMsg && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-teal-900/20 border border-teal-500/30 text-teal-300 text-sm"
+                >
+                  <ShieldCheck className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />
+                  <span>{successMsg}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-              {signUpFlow === 'options' && (
-                /* OPTION SELECTION SCREEN */
-                <div className="space-y-6">
-                  <div className="text-center mb-6">
-                    <h2 className="text-2xl font-extrabold text-white mb-2">Create Character Profile</h2>
-                    <p className="text-sm text-zinc-400">Select how you want to join the platform</p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <button
-                      onClick={() => setSignUpFlow('access_code')}
-                      className="w-full flex items-center justify-between p-5 rounded-2xl bg-black/40 border border-zinc-800 hover:border-purple-500/50 hover:bg-purple-950/5 transition-all text-left group"
-                    >
-                      <div>
-                        <h4 className="font-bold text-white group-hover:text-purple-400 transition-colors">I have an Access Code</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Directly claim your school-assigned pre-seeded roster profile</p>
-                      </div>
-                      <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-purple-400 transition-transform group-hover:translate-x-1" />
-                    </button>
-
-                    <button
-                      onClick={() => { setSignUpFlow('guided'); setSelectedBoard('CBSE'); }}
-                      className="w-full flex items-center justify-between p-5 rounded-2xl bg-black/40 border border-zinc-800 hover:border-teal-500/50 hover:bg-teal-950/5 transition-all text-left group"
-                    >
-                      <div>
-                        <h4 className="font-bold text-white group-hover:text-teal-400 transition-colors">I am a Student (Guided Setup)</h4>
-                        <p className="text-xs text-zinc-500 mt-1">No access code. Find your school, class, and stream via cascading dropdowns</p>
-                      </div>
-                      <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-teal-400 transition-transform group-hover:translate-x-1" />
-                    </button>
-
-                    <button
-                      onClick={() => setSignUpFlow('solo')}
-                      className="w-full flex items-center justify-between p-5 rounded-2xl bg-black/40 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/40 transition-all text-left group"
-                    >
-                      <div>
-                        <h4 className="font-bold text-white group-hover:text-zinc-200 transition-colors">Individual User Flow</h4>
-                        <p className="text-xs text-zinc-500 mt-1">Exploring on your own without a school cohort</p>
-                      </div>
-                      <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-zinc-200 transition-transform group-hover:translate-x-1" />
-                    </button>
-                  </div>
-
-                  <div className="text-center text-sm text-zinc-500 pt-4 border-t border-zinc-900">
-                    <button onClick={() => { setIsSignUp(false); setPassword(''); setConfirmPassword(''); setSignUpEmail(''); }} className="hover:underline">Already registered? Sign In</button>
-                  </div>
+            {/* FLOW SWITCHER */}
+            {!isSignUp ? (
+              /* ──── SIGN IN FLOW ──── */
+              <div>
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-extrabold text-white mb-1">Welcome Back</h2>
+                  <p className="text-xs text-zinc-400">Sign in to resume your character evaluations</p>
                 </div>
-              )}
 
-              {/* FLOW A: ACCESS CODE CLAIM */}
-              {signUpFlow === 'access_code' && (
-                <div>
-                  {!claimedCodeDetails ? (
-                    <form onSubmit={handleVerifyAccessCode} className="space-y-6">
-                      <div className="text-center mb-6">
-                        <h3 className="text-xl font-bold text-white">Enter Roster Code</h3>
-                        <p className="text-xs text-zinc-400 mt-1">Codes are assigned in format PSY-SCHOOL-10A-042</p>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Access Code</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="PSY-DAV-10A-042"
-                          value={accessCode}
-                          onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
-                          className="w-full text-center bg-black/40 border border-zinc-800 rounded-xl py-3 text-lg font-mono text-white placeholder-zinc-700 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                        />
-                        {codeError && <span className="text-[10px] text-red-400 font-semibold mt-1 block">{codeError}</span>}
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                      >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Verify Roster Identity</span>}
-                      </button>
-                    </form>
-                  ) : (
-                    /* Claim Password creation screen */
-                    <form onSubmit={handleClaimAccount} className="space-y-6">
-                      <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-center">
-                        <h4 className="text-sm font-semibold text-purple-400 uppercase tracking-wider">Identity Confirmed!</h4>
-                        <p className="text-lg font-bold text-white mt-2">
-                          {claimedCodeDetails.firstName} {claimedCodeDetails.lastName}
-                        </p>
-                        <p className="text-xs text-zinc-400 mt-1">
-                          Class {claimedCodeDetails.className}-{claimedCodeDetails.sectionName} at {claimedCodeDetails.school}
-                        </p>
-                      </div>
-
-                      {/* Method Selector */}
-                      <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
-                        <button
-                          type="button"
-                          onClick={() => setSignUpMethod('email')}
-                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
-                        >
-                          Email
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSignUpMethod('phone')}
-                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
-                        >
-                          Phone Number
-                        </button>
-                      </div>
-
-                      {signUpMethod === 'email' ? (
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
-                          <input
-                            type="email"
-                            required
-                            placeholder="name@school.edu"
-                            value={signUpEmail}
-                            onChange={(e) => setSignUpEmail(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
-                          <input
-                            type="tel"
-                            required
-                            placeholder="+919876543210"
-                            value={signUpPhone}
-                            onChange={(e) => setSignUpPhone(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Set Account Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Confirm Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                      >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Activate Character Account</span>}
-                      </button>
-                    </form>
-                  )}
-                </div>
-              )}
-
-              {/* FLOW B: GUIDED CASCADING DROPDOWNS */}
-              {signUpFlow === 'guided' && (
-                <form onSubmit={handleGuidedSignUp} className="space-y-6">
-                  {/* PROGRESS BAR */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-zinc-500 font-bold uppercase">
-                      <span>Step {step} of 6</span>
-                      <span>{Math.round((step / 6) * 100)}%</span>
-                    </div>
-                    <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
-                      <div className="h-full bg-teal-400 transition-all duration-300" style={{ width: `${(step / 6) * 100}%` }} />
-                    </div>
-                  </div>
-
-                  {step === 1 && (
-                    /* Step 1: State & City */
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-bold text-white text-center">Select Your Location</h3>
-                      
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase">State</label>
-                        <select
-                          value={selectedState}
-                          onChange={(e) => { setSelectedState(e.target.value); setSelectedCity(''); setSelectedSchool(''); }}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white appearance-none focus:outline-none focus:border-teal-500"
-                        >
-                          <option value="">Select State</option>
-                          {MOCK_GEOGRAPHY.states.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-
-                      {selectedState && (
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase">City</label>
-                          <select
-                            value={selectedCity}
-                            onChange={(e) => { setSelectedCity(e.target.value); setSelectedSchool(''); }}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white appearance-none focus:outline-none focus:border-teal-500"
-                          >
-                            <option value="">Select City</option>
-                            {(MOCK_GEOGRAPHY.cities[selectedState] || []).map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        disabled={!selectedCity}
-                        onClick={() => setStep(2)}
-                        className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
-                      >
-                        Next Step
-                      </button>
-                    </div>
-                  )}
-
-                  {step === 2 && (
-                    /* Step 2: Enrolled School */
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-bold text-white text-center">Select Enrolled School</h3>
-
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                        {(MOCK_GEOGRAPHY.schools[selectedCity] || []).map(sch => (
-                          <div 
-                            key={sch.name}
-                            onClick={() => { setSelectedSchool(sch.name); setSelectedBoard(sch.board); }}
-                            className={`p-4 rounded-xl border text-left cursor-pointer transition-all ${
-                              selectedSchool === sch.name 
-                                ? 'bg-teal-500/10 border-teal-500 text-white' 
-                                : 'bg-black/30 border-zinc-900 text-zinc-400 hover:border-zinc-800'
-                            }`}
-                          >
-                            <span className="text-sm font-bold block">{sch.name}</span>
-                            <span className="text-[10px] font-semibold text-zinc-500">{sch.board} Board</span>
-                          </div>
-                        ))}
-                      </div>
-
-                      {selectedSchool && (
-                        <div className="space-y-1.5 p-3 rounded-xl bg-teal-950/20 border border-teal-500/20">
-                          <label className="text-[10px] font-bold text-teal-400 uppercase tracking-widest block">Limited Board Configuration</label>
-                          <select
-                            value={selectedBoard}
-                            onChange={(e) => setSelectedBoard(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-lg py-2 px-3 text-xs text-white focus:outline-none"
-                          >
-                            <option value="CBSE">CBSE</option>
-                            <option value="ICSE">ICSE</option>
-                            <option value="State Board">State Board</option>
-                          </select>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        disabled={!selectedSchool}
-                        onClick={() => setStep(3)}
-                        className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all"
-                      >
-                        Next Step
-                      </button>
-                    </div>
-                  )}
-
-                  {step === 3 && (
-                    /* Step 3: Class & Section */
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-bold text-white text-center">Your Class & Section</h3>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Class Level</label>
-                        <div className="grid grid-cols-5 gap-2">
-                          {['8', '9', '10', '11', '12'].map(c => (
-                            <button
-                              type="button"
-                              key={c}
-                              onClick={() => { setSelectedClass(c); if (Number(c) < 11) setSelectedStream(''); }}
-                              className={`py-3 rounded-xl font-bold transition-all ${
-                                selectedClass === c 
-                                  ? 'bg-teal-500 text-black shadow-[0_0_10px_rgba(0,245,212,0.3)]' 
-                                  : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {c}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 pt-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Section</label>
-                        <div className="grid grid-cols-4 gap-2">
-                          {['A', 'B', 'C', 'D'].map(sec => (
-                            <button
-                              type="button"
-                              key={sec}
-                              onClick={() => setSelectedSection(sec)}
-                              className={`py-2.5 rounded-xl font-bold transition-all ${
-                                selectedSection === sec 
-                                  ? 'bg-teal-500 text-black shadow-[0_0_10px_rgba(0,245,212,0.3)]' 
-                                  : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {sec}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={!selectedClass || !selectedSection}
-                        onClick={() => {
-                          if (['11', '12'].includes(selectedClass)) {
-                            setStep(4);
-                          } else {
-                            setStep(5);
-                          }
-                        }}
-                        className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
-                      >
-                        Next Step
-                      </button>
-                    </div>
-                  )}
-
-                  {step === 4 && (
-                    /* Step 4: Stream (Class 11/12 only) */
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-bold text-white text-center">Select Academic Stream</h3>
-
-                      <div className="space-y-3">
-                        {['Science', 'Commerce', 'Humanities', 'Vocational'].map(str => (
-                          <div 
-                            key={str}
-                            onClick={() => setSelectedStream(str)}
-                            className={`p-4 rounded-xl border text-center cursor-pointer font-semibold transition-all ${
-                              selectedStream === str 
-                                ? 'bg-teal-500/10 border-teal-500 text-white' 
-                                : 'bg-black/30 border-zinc-900 text-zinc-400 hover:border-zinc-800'
-                            }`}
-                          >
-                            {str}
-                          </div>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={!selectedStream}
-                        onClick={() => setStep(5)}
-                        className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
-                      >
-                        Next Step
-                      </button>
-                    </div>
-                  )}
-
-                  {step === 5 && (
-                    /* Step 5: Name, Gender, DOB */
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-bold text-white text-center">Personal Profile</h3>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase">First Name</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Vedant"
-                            value={firstName}
-                            onChange={(e) => setFirstName(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold text-zinc-500 uppercase">Last Name</label>
-                          <input
-                            type="text"
-                            required
-                            placeholder="Narayan"
-                            value={lastName}
-                            onChange={(e) => setLastName(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 pt-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase block">Gender</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {['Male', 'Female', 'Other', 'Prefer not to say'].map(g => (
-                            <button
-                              type="button"
-                              key={g}
-                              onClick={() => setGender(g)}
-                              className={`py-2 rounded-xl text-xs font-semibold transition-all ${
-                                gender === g 
-                                  ? 'bg-teal-500 text-black shadow-[0_0_8px_rgba(0,245,212,0.2)]' 
-                                  : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
-                              }`}
-                            >
-                              {g}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-1 pt-2">
-                        <label className="text-[10px] font-bold text-zinc-500 uppercase">Date of Birth</label>
-                        <div className="relative">
-                          <Calendar className="absolute left-3 top-3 w-4.5 h-4.5 text-zinc-500" />
-                          <input
-                            type="date"
-                            required
-                            value={dob}
-                            onChange={(e) => setDob(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-teal-500"
-                          />
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={!firstName || !lastName || !gender || !dob}
-                        onClick={() => {
-                          setSignUpEmail(`${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`);
-                          setStep(6);
-                        }}
-                        className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
-                      >
-                        Next Step
-                      </button>
-                    </div>
-                  )}
-
-                  {step === 6 && (
-                    /* Step 6: Password & Confirm Setup */
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-bold text-white text-center">Set Password</h3>
-
-                      <div className="p-4 rounded-xl bg-teal-950/20 border border-teal-500/20 text-xs space-y-1 text-zinc-300">
-                        <p><strong className="text-teal-400">School:</strong> {selectedSchool}</p>
-                        <p><strong className="text-teal-400">Class:</strong> Class {selectedClass}-{selectedSection} {selectedStream ? `• ${selectedStream}` : ''}</p>
-                        <p><strong className="text-teal-400">Student Name:</strong> {firstName} {lastName}</p>
-                      </div>
-
-                      {/* Method Selector */}
-                      <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
-                        <button
-                          type="button"
-                          onClick={() => setSignUpMethod('email')}
-                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-zinc-500 hover:text-white'}`}
-                        >
-                          Email
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSignUpMethod('phone')}
-                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-zinc-500 hover:text-white'}`}
-                        >
-                          Phone Number
-                        </button>
-                      </div>
-
-                      {signUpMethod === 'email' ? (
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
-                          <input
-                            type="email"
-                            required
-                            placeholder="student@school.edu"
-                            value={signUpEmail}
-                            onChange={(e) => setSignUpEmail(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
-                          <input
-                            type="tel"
-                            required
-                            placeholder="+919876543210"
-                            value={signUpPhone}
-                            onChange={(e) => setSignUpPhone(e.target.value)}
-                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
-                          />
-                        </div>
-                      )}
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Confirm Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••"
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                      >
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><span>Launch Quest</span><ArrowRight className="w-4 h-4" /></>}
-                      </button>
-                    </div>
-                  )}
-                </form>
-              )}
-
-              {/* FLOW C: SOLO REGISTRATION */}
-              {signUpFlow === 'solo' && (
-                <form onSubmit={handleSoloSignUp} className="space-y-5">
-                  <div className="text-center mb-6">
-                    <h3 className="text-xl font-bold text-white">Solo Quest Settings</h3>
-                    <p className="text-xs text-zinc-400 mt-1">Independent profile registration</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-zinc-500 uppercase">First Name</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="John"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-semibold text-zinc-500 uppercase">Last Name</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Doe"
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Age Group</label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {['13-15', '16-18', '19-22', '23+'].map(ag => (
-                        <button
-                          type="button"
-                          key={ag}
-                          onClick={() => setSoloAgeGroup(ag)}
-                          className={`py-2 rounded-xl text-xs font-semibold transition-all ${
-                            soloAgeGroup === ag 
-                              ? 'bg-zinc-200 text-black shadow-[0_0_8px_rgba(255,255,255,0.15)]' 
-                              : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
-                          }`}
-                        >
-                          {ag}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Current Status</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {['Student', 'College Student', 'Working Professional', 'Exploring'].map(st => (
-                        <button
-                          type="button"
-                          key={st}
-                          onClick={() => setSoloStatus(st)}
-                          className={`py-2 rounded-xl text-xs font-semibold transition-all ${
-                            soloStatus === st 
-                              ? 'bg-zinc-200 text-black' 
-                              : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
-                          }`}
-                        >
-                          {st}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase">Your City</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Mumbai"
-                      value={soloCity}
-                      onChange={(e) => setSoloCity(e.target.value)}
-                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Interests</label>
-                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                      {INTEREST_OPTIONS.map(opt => (
-                        <button
-                          type="button"
-                          key={opt}
-                          onClick={() => toggleInterest(opt)}
-                          className={`px-3 py-1.5 rounded-full text-[10px] font-semibold transition-all ${
-                            soloInterests.includes(opt) 
-                              ? 'bg-purple-600/20 border border-purple-500 text-purple-300' 
-                              : 'bg-black/30 border border-zinc-900 text-zinc-500 hover:border-zinc-800'
-                          }`}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
+                <form onSubmit={handleSignIn} className="space-y-5">
                   {/* Method Selector */}
                   <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
                     <button
                       type="button"
-                      onClick={() => setSignUpMethod('email')}
-                      className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                      onClick={() => setLoginMethod('email')}
+                      className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${loginMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
                     >
-                      Email
+                      Email Address
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSignUpMethod('phone')}
-                      className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                      onClick={() => setLoginMethod('phone')}
+                      className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${loginMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
                     >
                       Phone Number
                     </button>
                   </div>
 
-                  {signUpMethod === 'email' ? (
+                  {loginMethod === 'email' ? (
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-zinc-500 uppercase">Email Address</label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="name@example.com"
-                        value={signUpEmail}
-                        onChange={(e) => setSignUpEmail(e.target.value)}
-                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
+                      <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
+                        <input
+                          type="email"
+                          required
+                          placeholder="name@school.edu"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-1">
-                      <label className="text-xs font-semibold text-zinc-500 uppercase">Phone Number</label>
-                      <input
-                        type="tel"
-                        required
-                        placeholder="+919876543210"
-                        value={signUpPhone}
-                        onChange={(e) => setSignUpPhone(e.target.value)}
-                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                      />
+                      <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
+                      <div className="relative">
+                        <Smartphone className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
+                        <input
+                          type="tel"
+                          required
+                          placeholder="+919876543210"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                        />
+                      </div>
                     </div>
                   )}
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase">Password</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase">Confirm Password</label>
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
-                    />
+                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                      />
+                    </div>
                   </div>
 
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-zinc-200 hover:bg-white text-black font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Open Quest Box</span>}
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><span>Enter Portal</span><ArrowRight className="w-4 h-4" /></>}
                   </button>
                 </form>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Footer */}
-      <footer className="mt-10 text-center text-xs text-zinc-600">
-        <p>© 2026 PsyMetric Labs. Guided Career Synthesis Portal.</p>
-      </footer>
+                {/* Google Sign In Option */}
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-zinc-900" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-[#030303] px-2 text-zinc-500 font-semibold tracking-wider">Or continue with</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2.5 bg-black/40 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-semibold py-3 px-4 rounded-xl transition-all shadow-md"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.53 14.98 1 12 1 7.35 1 3.37 3.67 1.39 7.56l3.85 2.99C6.15 7.15 8.87 5.04 12 5.04z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.43c-.28 1.44-1.09 2.67-2.32 3.5l3.6 2.79c2.1-1.94 3.3-4.8 3.3-7.94z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.24 14.56c-.25-.75-.39-1.56-.39-2.4s.14-1.65.39-2.4L1.39 6.77C.5 8.56 0 10.56 0 12.7c0 2.13.5 4.14 1.39 5.92l3.85-3.06z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.6-2.79c-1 .67-2.28 1.07-3.76 1.07-3.13 0-5.85-2.11-6.8-5.11l-3.85 2.99C3.37 20.33 7.35 23 12 23z"
+                    />
+                  </svg>
+                  <span>Google</span>
+                </button>
+
+                <div className="mt-8 text-center text-sm text-zinc-400">
+                  <p>
+                    First time evaluator?{' '}
+                    <button
+                      onClick={() => { setIsSignUp(true); setSignUpFlow('options'); setPassword(''); setConfirmPassword(''); setSignUpEmail(''); }}
+                      className="text-purple-400 hover:text-purple-300 font-medium hover:underline"
+                    >
+                      Create Account
+                    </button>
+                  </p>
+                </div>
+              </div>
+            ) : (
+              /* ──── SIGN UP FLOWS ──── */
+              <div>
+                {/* BACK BUTTON */}
+                {signUpFlow !== 'options' && (
+                  <button 
+                    onClick={() => { setSignUpFlow('options'); setStep(1); }}
+                    className="flex items-center gap-1.5 text-zinc-400 hover:text-white text-xs font-semibold mb-6"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back to options
+                  </button>
+                )}
+
+                {signUpFlow === 'options' && (
+                  /* OPTION SELECTION SCREEN */
+                  <div className="space-y-6">
+                    <div className="text-center mb-6">
+                      <h2 className="text-2xl font-extrabold text-white mb-1">Create Character Profile</h2>
+                      <p className="text-xs text-zinc-400">Select how you want to join the platform</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <button
+                        onClick={() => setSignUpFlow('access_code')}
+                        className="w-full flex items-center justify-between p-5 rounded-2xl bg-black/40 border border-zinc-800 hover:border-purple-500/50 hover:bg-purple-950/5 transition-all text-left group"
+                      >
+                        <div>
+                          <h4 className="font-bold text-white group-hover:text-purple-400 transition-colors">I have an Access Code</h4>
+                          <p className="text-xs text-zinc-500 mt-1">Directly claim your school-assigned pre-seeded roster profile</p>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-purple-400 transition-transform group-hover:translate-x-1" />
+                      </button>
+
+                      <button
+                        onClick={() => { setSignUpFlow('guided'); setSelectedBoard('CBSE'); }}
+                        className="w-full flex items-center justify-between p-5 rounded-2xl bg-black/40 border border-zinc-800 hover:border-teal-500/50 hover:bg-teal-950/5 transition-all text-left group"
+                      >
+                        <div>
+                          <h4 className="font-bold text-white group-hover:text-teal-400 transition-colors">I am a Student (Guided Setup)</h4>
+                          <p className="text-xs text-zinc-500 mt-1">No access code. Find your school, class, and stream via cascading dropdowns</p>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-teal-400 transition-transform group-hover:translate-x-1" />
+                      </button>
+
+                      <button
+                        onClick={() => setSignUpFlow('solo')}
+                        className="w-full flex items-center justify-between p-5 rounded-2xl bg-black/40 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-900/40 transition-all text-left group"
+                      >
+                        <div>
+                          <h4 className="font-bold text-white group-hover:text-zinc-200 transition-colors">Individual User Flow</h4>
+                          <p className="text-xs text-zinc-500 mt-1">Exploring on your own without a school cohort</p>
+                        </div>
+                        <ArrowRight className="w-5 h-5 text-zinc-600 group-hover:text-zinc-200 transition-transform group-hover:translate-x-1" />
+                      </button>
+                    </div>
+
+                    <div className="text-center text-sm text-zinc-500 pt-4 border-t border-zinc-900">
+                      <button onClick={() => { setIsSignUp(false); setPassword(''); setConfirmPassword(''); setSignUpEmail(''); }} className="hover:underline">Already registered? Sign In</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* FLOW A: ACCESS CODE CLAIM */}
+                {signUpFlow === 'access_code' && (
+                  <div>
+                    {!claimedCodeDetails ? (
+                      <form onSubmit={handleVerifyAccessCode} className="space-y-6">
+                        <div className="text-center mb-6">
+                          <h3 className="text-xl font-bold text-white">Enter Roster Code</h3>
+                          <p className="text-xs text-zinc-400 mt-1">Codes are assigned in format PSY-SCHOOL-10A-042</p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Access Code</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="PSY-DAV-10A-042"
+                            value={accessCode}
+                            onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
+                            className="w-full text-center bg-black/40 border border-zinc-800 rounded-xl py-3 text-lg font-mono text-white placeholder-zinc-700 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                          />
+                          {codeError && <span className="text-[10px] text-red-400 font-semibold mt-1 block">{codeError}</span>}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                        >
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Verify Roster Identity</span>}
+                        </button>
+                      </form>
+                    ) : (
+                      /* Claim Password creation screen */
+                      <form onSubmit={handleClaimAccount} className="space-y-6">
+                        <div className="p-4 rounded-2xl bg-purple-500/5 border border-purple-500/20 text-center">
+                          <h4 className="text-sm font-semibold text-purple-400 uppercase tracking-wider">Identity Confirmed!</h4>
+                          <p className="text-lg font-bold text-white mt-2">
+                            {claimedCodeDetails.firstName} {claimedCodeDetails.lastName}
+                          </p>
+                          <p className="text-xs text-zinc-400 mt-1">
+                            Class {claimedCodeDetails.className}-{claimedCodeDetails.sectionName} at {claimedCodeDetails.school}
+                          </p>
+                        </div>
+
+                        {/* Method Selector */}
+                        <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                          <button
+                            type="button"
+                            onClick={() => setSignUpMethod('email')}
+                            className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                          >
+                            Email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSignUpMethod('phone')}
+                            className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                          >
+                            Phone Number
+                          </button>
+                        </div>
+
+                        {signUpMethod === 'email' ? (
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                            <input
+                              type="email"
+                              required
+                              placeholder="name@school.edu"
+                              value={signUpEmail}
+                              onChange={(e) => setSignUpEmail(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="+919876543210"
+                              value={signUpPhone}
+                              onChange={(e) => setSignUpPhone(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Set Account Password</label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                          />
+                          {password && (
+                            <div className="space-y-1 mt-1.5">
+                              <div className="flex justify-between text-[9px] font-bold text-zinc-500">
+                                <span>Password Strength</span>
+                                <span className="text-zinc-400">{getPasswordStrength(password).label}</span>
+                              </div>
+                              <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${getPasswordStrength(password).color} transition-all duration-300`} 
+                                  style={{ width: `${getPasswordStrength(password).score}%` }} 
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Confirm Password</label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••••"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                          />
+                          {confirmPassword && password && (
+                            <div className="text-[10px] font-bold mt-1">
+                              {password === confirmPassword ? (
+                                <span className="text-teal-400">✓ Passwords match</span>
+                              ) : (
+                                <span className="text-red-400">✗ Passwords do not match</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                        >
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Activate Character Account</span>}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
+
+                {/* FLOW B: GUIDED CASCADING DROPDOWNS */}
+                {signUpFlow === 'guided' && (
+                  <form onSubmit={handleGuidedSignUp} className="space-y-6">
+                    {/* PROGRESS BAR */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] text-zinc-500 font-bold uppercase">
+                        <span>Step {step} of 6</span>
+                        <span>{Math.round((step / 6) * 100)}%</span>
+                      </div>
+                      <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+                        <div className="h-full bg-teal-400 transition-all duration-300" style={{ width: `${(step / 6) * 100}%` }} />
+                      </div>
+                    </div>
+
+                    {step === 1 && (
+                      /* Step 1: Location */
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-bold text-white text-center">Select Your Location</h3>
+                        
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase">State</label>
+                          <select
+                            value={selectedState}
+                            onChange={(e) => { setSelectedState(e.target.value); setSelectedCity(''); setSelectedSchool(''); }}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white appearance-none focus:outline-none focus:border-teal-500"
+                          >
+                            <option value="">Select State</option>
+                            {MOCK_GEOGRAPHY.states.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </div>
+
+                        {selectedState && (
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase">City</label>
+                            <select
+                              value={selectedCity}
+                              onChange={(e) => { setSelectedCity(e.target.value); setSelectedSchool(''); }}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white appearance-none focus:outline-none focus:border-teal-500"
+                            >
+                              <option value="">Select City</option>
+                              {(MOCK_GEOGRAPHY.cities[selectedState] || []).map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={!selectedCity}
+                          onClick={() => setStep(2)}
+                          className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+                        >
+                          Next Step
+                        </button>
+                      </div>
+                    )}
+
+                    {step === 2 && (
+                      /* Step 2: Enrolled School */
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-bold text-white text-center">Select Enrolled School</h3>
+
+                        <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                          {(MOCK_GEOGRAPHY.schools[selectedCity] || []).map(sch => (
+                            <div 
+                              key={sch.name}
+                              onClick={() => { setSelectedSchool(sch.name); setSelectedBoard(sch.board); }}
+                              className={`p-4 rounded-xl border text-left cursor-pointer transition-all ${
+                                selectedSchool === sch.name 
+                                  ? 'bg-teal-500/10 border-teal-500 text-white' 
+                                  : 'bg-black/30 border-zinc-900 text-zinc-400 hover:border-zinc-800'
+                              }`}
+                            >
+                              <span className="text-sm font-bold block">{sch.name}</span>
+                              <span className="text-[10px] font-semibold text-zinc-500">{sch.board} Board</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {selectedSchool && (
+                          <div className="space-y-1.5 p-3 rounded-xl bg-teal-950/20 border border-teal-500/20">
+                            <label className="text-[10px] font-bold text-teal-400 uppercase tracking-widest block">Limited Board Configuration</label>
+                            <select
+                              value={selectedBoard}
+                              onChange={(e) => setSelectedBoard(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-lg py-2 px-3 text-xs text-white focus:outline-none"
+                            >
+                              <option value="CBSE">CBSE</option>
+                              <option value="ICSE">ICSE</option>
+                              <option value="State Board">State Board</option>
+                            </select>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={!selectedSchool}
+                          onClick={() => setStep(3)}
+                          className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all"
+                        >
+                          Next Step
+                        </button>
+                      </div>
+                    )}
+
+                    {step === 3 && (
+                      /* Step 3: Class & Section */
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-bold text-white text-center">Your Class & Section</h3>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Class Level</label>
+                          <div className="grid grid-cols-5 gap-2">
+                            {['8', '9', '10', '11', '12'].map(c => (
+                              <button
+                                type="button"
+                                key={c}
+                                onClick={() => { setSelectedClass(c); if (Number(c) < 11) setSelectedStream(''); }}
+                                className={`py-3 rounded-xl font-bold transition-all ${
+                                  selectedClass === c 
+                                    ? 'bg-teal-500 text-black shadow-[0_0_10px_rgba(0,245,212,0.3)]' 
+                                    : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                {c}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-2">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block">Section</label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {['A', 'B', 'C', 'D'].map(sec => (
+                              <button
+                                type="button"
+                                key={sec}
+                                onClick={() => setSelectedSection(sec)}
+                                className={`py-2.5 rounded-xl font-bold transition-all ${
+                                  selectedSection === sec 
+                                    ? 'bg-teal-500 text-black shadow-[0_0_10px_rgba(0,245,212,0.3)]' 
+                                    : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                {sec}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={!selectedClass || !selectedSection}
+                          onClick={() => {
+                            if (['11', '12'].includes(selectedClass)) {
+                              setStep(4);
+                            } else {
+                              setStep(5);
+                            }
+                          }}
+                          className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+                        >
+                          Next Step
+                        </button>
+                      </div>
+                    )}
+
+                    {step === 4 && (
+                      /* Step 4: Stream */
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-bold text-white text-center">Select Academic Stream</h3>
+
+                        <div className="space-y-3">
+                          {['Science', 'Commerce', 'Humanities', 'Vocational'].map(str => (
+                            <div 
+                              key={str}
+                              onClick={() => setSelectedStream(str)}
+                              className={`p-4 rounded-xl border text-center cursor-pointer font-semibold transition-all ${
+                                selectedStream === str 
+                                  ? 'bg-teal-500/10 border-teal-500 text-white' 
+                                  : 'bg-black/30 border-zinc-900 text-zinc-400 hover:border-zinc-800'
+                              }`}
+                            >
+                              {str}
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={!selectedStream}
+                          onClick={() => setStep(5)}
+                          className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+                        >
+                          Next Step
+                        </button>
+                      </div>
+                    )}
+
+                    {step === 5 && (
+                      /* Step 5: Personal Profile */
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-bold text-white text-center">Personal Profile</h3>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase">First Name</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Vedant"
+                              value={firstName}
+                              onChange={(e) => setFirstName(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-zinc-500 uppercase">Last Name</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Narayan"
+                              value={lastName}
+                              onChange={(e) => setLastName(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-2">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase block">Gender</label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {['Male', 'Female', 'Other', 'Prefer not to say'].map(g => (
+                              <button
+                                type="button"
+                                key={g}
+                                onClick={() => setGender(g)}
+                                className={`py-2 rounded-xl text-xs font-semibold transition-all ${
+                                  gender === g 
+                                    ? 'bg-teal-500 text-black shadow-[0_0_8px_rgba(0,245,212,0.2)]' 
+                                    : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white'
+                                }`}
+                              >
+                                {g}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1 pt-2">
+                          <label className="text-[10px] font-bold text-zinc-500 uppercase">Date of Birth</label>
+                          <div className="relative">
+                            <Calendar className="absolute left-3 top-3 w-4.5 h-4.5 text-zinc-500" />
+                            <input
+                              type="date"
+                              required
+                              value={dob}
+                              onChange={(e) => setDob(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 pl-10 pr-4 text-xs text-white focus:outline-none focus:border-teal-500"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={!firstName || !lastName || !gender || !dob}
+                          onClick={() => {
+                            setSignUpEmail(`${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`);
+                            setStep(6);
+                          }}
+                          className="w-full mt-4 bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all disabled:opacity-50"
+                        >
+                          Next Step
+                        </button>
+                      </div>
+                    )}
+
+                    {step === 6 && (
+                      /* Step 6: Guided flow credentials */
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-bold text-white text-center">Set Credentials</h3>
+
+                        <div className="p-4 rounded-xl bg-teal-950/20 border border-teal-500/20 text-xs space-y-1 text-zinc-300">
+                          <p><strong className="text-teal-400">School:</strong> {selectedSchool}</p>
+                          <p><strong className="text-teal-400">Class:</strong> Class {selectedClass}-{selectedSection} {selectedStream ? `• ${selectedStream}` : ''}</p>
+                          <p><strong className="text-teal-400">Student Name:</strong> {firstName} {lastName}</p>
+                        </div>
+
+                        {/* Method Selector */}
+                        <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                          <button
+                            type="button"
+                            onClick={() => setSignUpMethod('email')}
+                            className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-zinc-500 hover:text-white'}`}
+                          >
+                            Email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSignUpMethod('phone')}
+                            className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-zinc-500 hover:text-white'}`}
+                          >
+                            Phone Number
+                          </button>
+                        </div>
+
+                        {signUpMethod === 'email' ? (
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                            <input
+                              type="email"
+                              required
+                              placeholder="student@school.edu"
+                              value={signUpEmail}
+                              onChange={(e) => setSignUpEmail(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                            />
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
+                            <input
+                              type="tel"
+                              required
+                              placeholder="+919876543210"
+                              value={signUpPhone}
+                              onChange={(e) => setSignUpPhone(e.target.value)}
+                              className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Password</label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                          />
+                          {password && (
+                            <div className="space-y-1 mt-1.5">
+                              <div className="flex justify-between text-[9px] font-bold text-zinc-500">
+                                <span>Password Strength</span>
+                                <span className="text-zinc-400">{getPasswordStrength(password).label}</span>
+                              </div>
+                              <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full ${getPasswordStrength(password).color} transition-all duration-300`} 
+                                  style={{ width: `${getPasswordStrength(password).score}%` }} 
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Confirm Password</label>
+                          <input
+                            type="password"
+                            required
+                            placeholder="••••••••"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                          />
+                          {confirmPassword && password && (
+                            <div className="text-[10px] font-bold mt-1">
+                              {password === confirmPassword ? (
+                                <span className="text-teal-400">✓ Passwords match</span>
+                              ) : (
+                                <span className="text-red-400">✗ Passwords do not match</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                        >
+                          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><span>Launch Quest</span><ArrowRight className="w-4 h-4" /></>}
+                        </button>
+                      </div>
+                    )}
+                  </form>
+                )}
+
+                {/* FLOW C: SOLO REGISTRATION */}
+                {signUpFlow === 'solo' && (
+                  <form onSubmit={handleSoloSignUp} className="space-y-5">
+                    <div className="text-center mb-6">
+                      <h3 className="text-xl font-bold text-white">Solo Quest Settings</h3>
+                      <p className="text-xs text-zinc-400 mt-1">Independent profile registration</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase">First Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="John"
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase">Last Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Doe"
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Age Group</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['13-15', '16-18', '19-22', '23+'].map(ag => (
+                          <button
+                            type="button"
+                            key={ag}
+                            onClick={() => setSoloAgeGroup(ag)}
+                            className={`py-2 rounded-xl text-xs font-semibold transition-all ${
+                              soloAgeGroup === ag 
+                                ? 'bg-zinc-200 text-black shadow-[0_0_8px_rgba(255,255,255,0.15)]' 
+                                : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {ag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Current Status</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {['Student', 'College Student', 'Working Professional', 'Exploring'].map(st => (
+                          <button
+                            type="button"
+                            key={st}
+                            onClick={() => setSoloStatus(st)}
+                            className={`py-2 rounded-xl text-xs font-semibold transition-all ${
+                              soloStatus === st 
+                                ? 'bg-zinc-200 text-black' 
+                                : 'bg-zinc-900 border border-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {st}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase">Your City</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Mumbai"
+                        value={soloCity}
+                        onChange={(e) => setSoloCity(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Interests</label>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                        {INTEREST_OPTIONS.map(opt => (
+                          <button
+                            type="button"
+                            key={opt}
+                            onClick={() => toggleInterest(opt)}
+                            className={`px-3 py-1.5 rounded-full text-[10px] font-semibold transition-all ${
+                              soloInterests.includes(opt) 
+                                ? 'bg-purple-600/20 border border-purple-500 text-purple-300' 
+                                : 'bg-black/30 border border-zinc-900 text-zinc-500 hover:border-zinc-800'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Method Selector */}
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                      <button
+                        type="button"
+                        onClick={() => setSignUpMethod('email')}
+                        className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                      >
+                        Email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSignUpMethod('phone')}
+                        className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                      >
+                        Phone Number
+                      </button>
+                    </div>
+
+                    {signUpMethod === 'email' ? (
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase">Email Address</label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="name@example.com"
+                          value={signUpEmail}
+                          onChange={(e) => setSignUpEmail(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase">Phone Number</label>
+                        <input
+                          type="tel"
+                          required
+                          placeholder="+919876543210"
+                          value={signUpPhone}
+                          onChange={(e) => setSignUpPhone(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase">Password</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                      />
+                      {password && (
+                        <div className="space-y-1 mt-1.5">
+                          <div className="flex justify-between text-[9px] font-bold text-zinc-500">
+                            <span>Password Strength</span>
+                            <span className="text-zinc-400">{getPasswordStrength(password).label}</span>
+                          </div>
+                          <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full ${getPasswordStrength(password).color} transition-all duration-300`} 
+                              style={{ width: `${getPasswordStrength(password).score}%` }} 
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase">Confirm Password</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                      />
+                      {confirmPassword && password && (
+                        <div className="text-[10px] font-bold mt-1">
+                          {password === confirmPassword ? (
+                            <span className="text-teal-400">✓ Passwords match</span>
+                          ) : (
+                            <span className="text-red-400">✗ Passwords do not match</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full bg-zinc-200 hover:bg-white text-black font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Open Quest Box</span>}
+                    </button>
+
+                    {/* Google signup inside Solo flow */}
+                    {signUpMethod === 'email' && (
+                      <>
+                        <div className="relative my-4">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-zinc-900" />
+                          </div>
+                          <div className="relative flex justify-center text-[10px] uppercase">
+                            <span className="bg-[#030303] px-2 text-zinc-500 font-semibold">Or register with</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleGoogleSignIn}
+                          disabled={loading}
+                          className="w-full flex items-center justify-center gap-2 bg-black/40 border border-zinc-800 hover:border-zinc-700 text-zinc-300 font-semibold py-2.5 rounded-xl transition-all text-xs"
+                        >
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24">
+                            <path
+                              fill="#EA4335"
+                              d="M12 5.04c1.66 0 3.2.57 4.38 1.69l3.27-3.27C17.67 1.53 14.98 1 12 1 7.35 1 3.37 3.67 1.39 7.56l3.85 2.99C6.15 7.15 8.87 5.04 12 5.04z"
+                            />
+                            <path
+                              fill="#4285F4"
+                              d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.43c-.28 1.44-1.09 2.67-2.32 3.5l3.6 2.79c2.1-1.94 3.3-4.8 3.3-7.94z"
+                            />
+                            <path
+                              fill="#FBBC05"
+                              d="M5.24 14.56c-.25-.75-.39-1.56-.39-2.4s.14-1.65.39-2.4L1.39 6.77C.5 8.56 0 10.56 0 12.7c0 2.13.5 4.14 1.39 5.92l3.85-3.06z"
+                            />
+                            <path
+                              fill="#34A853"
+                              d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.6-2.79c-1 .67-2.28 1.07-3.76 1.07-3.13 0-5.85-2.11-6.8-5.11l-3.85 2.99C3.37 20.33 7.35 23 12 23z"
+                            />
+                          </svg>
+                          <span>Google</span>
+                        </button>
+                      </>
+                    )}
+                  </form>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Small desktop footer / mobile footer */}
+        <footer className="mt-10 text-center text-[10px] text-zinc-600 block lg:hidden">
+          <p>© 2026 PsyMetric Labs. Guided Career Synthesis Portal.</p>
+        </footer>
+      </div>
     </div>
   );
 }
