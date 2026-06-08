@@ -104,7 +104,7 @@ export default function AuthPage() {
         if (profile?.user_type === 'school_admin' || profile?.user_type === 'super_admin') {
           router.push('/admin');
         } else {
-          router.push('/assessment');
+          router.push('/dashboard');
         }
       }
     };
@@ -175,13 +175,13 @@ export default function AuthPage() {
       
       setSuccessMsg('Access claimed successfully! Setting up your Quest Log...');
       setTimeout(() => {
-        router.push('/assessment');
+        router.push('/dashboard');
       }, 1500);
     } catch (err: any) {
       // Fallback local memory claim
       setSuccessMsg('Claimed sandbox profile. Welcome!');
       setTimeout(() => {
-        router.push('/assessment');
+        router.push('/dashboard');
       }, 1500);
     } finally {
       setLoading(false);
@@ -221,12 +221,12 @@ export default function AuthPage() {
 
       setSuccessMsg('Profile created! Launching evaluations...');
       setTimeout(() => {
-        router.push('/assessment');
+        router.push('/dashboard');
       }, 1500);
     } catch (err: any) {
       setSuccessMsg('Sandbox profile registered locally. Redirecting...');
       setTimeout(() => {
-        router.push('/assessment');
+        router.push('/dashboard');
       }, 1500);
     } finally {
       setLoading(false);
@@ -261,12 +261,12 @@ export default function AuthPage() {
 
       setSuccessMsg('Solo account launched! Entering Quest log...');
       setTimeout(() => {
-        router.push('/assessment');
+        router.push('/dashboard');
       }, 1500);
     } catch (err: any) {
       setSuccessMsg('Sandbox solo profile active. Entering...');
       setTimeout(() => {
-        router.push('/assessment');
+        router.push('/dashboard');
       }, 1500);
     } finally {
       setLoading(false);
@@ -299,7 +299,7 @@ export default function AuthPage() {
           if (profile?.user_type === 'school_admin' || profile?.user_type === 'super_admin' || profile?.is_admin) {
             router.push('/admin');
           } else {
-            router.push('/assessment');
+            router.push('/dashboard');
           }
         }, 1000);
       }
@@ -319,7 +319,7 @@ export default function AuthPage() {
       } else if (password) {
         setSuccessMsg('Offline login approved.');
         setTimeout(() => {
-          router.push('/assessment');
+          router.push('/dashboard');
         }, 1000);
       } else {
         setErrorMsg('Invalid credentials. Use admin@psymetric.com (password: admin) for testing.');

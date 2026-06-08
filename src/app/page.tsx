@@ -61,7 +61,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
             <button
-              onClick={() => router.push('/auth')}
+              onClick={() => router.push('/dashboard')}
               className="w-full sm:w-auto relative group bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-purple-600/20 flex items-center justify-center gap-2 transform hover:-translate-y-0.5 active:translate-y-0"
             >
               <span>Enter Student Portal</span>

@@ -626,10 +626,10 @@ export default function AssessmentWorkspace() {
                 <RotateCcw className="w-3.5 h-3.5" /> Re-Evaluate
               </button>
               <button 
-                onClick={handleLogout}
-                className="px-4 py-2 rounded-xl bg-red-950/20 border border-red-500/20 hover:bg-red-900/20 hover:border-red-500/40 text-xs font-semibold text-red-400 transition-all active:scale-95"
+                onClick={() => router.push('/dashboard')}
+                className="px-4 py-2 rounded-xl bg-purple-950/20 border border-purple-500/20 hover:bg-purple-900/20 hover:border-purple-500/40 text-xs font-semibold text-purple-400 transition-all active:scale-95"
               >
-                Exit Portal
+                Dashboard Hub
               </button>
             </div>
           </header>
