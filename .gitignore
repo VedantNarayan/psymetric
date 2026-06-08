@@ -29,3 +29,4 @@ supabase/.temp/
 
 # Design assets backup
 design_assets/
+.vercel

@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase/client';
 import { 
   User, Mail, Lock, GraduationCap, Building, 
   Sparkles, ShieldCheck, ArrowRight, Loader2, AlertCircle,
-  MapPin, CheckCircle, Calendar, ArrowLeft, RefreshCw
+  MapPin, CheckCircle, Calendar, ArrowLeft, RefreshCw, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -58,6 +58,10 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
+  const [loginMethod, setLoginMethod] = useState<'email' | 'phone'>('email');
+  const [phone, setPhone] = useState('');
+  const [signUpMethod, setSignUpMethod] = useState<'email' | 'phone'>('email');
+  const [signUpPhone, setSignUpPhone] = useState('');
 
   // Access Code input
   const [accessCode, setAccessCode] = useState('');
@@ -165,9 +169,7 @@ export default function AuthPage() {
     setLoading(true);
 
     try {
-      // Offline fallback profile creation
-      const { data, error } = await supabase.auth.signUp({
-        email: signUpEmail || claimedCodeDetails.email,
+      const signUpParams: any = {
         password: password,
         options: {
           data: {
@@ -179,7 +181,23 @@ export default function AuthPage() {
             access_code: accessCode
           }
         }
-      });
+      };
+
+      if (signUpMethod === 'email') {
+        signUpParams.email = signUpEmail || claimedCodeDetails.email;
+      } else {
+        let formattedPhone = signUpPhone.trim();
+        if (!formattedPhone.startsWith('+')) {
+          if (formattedPhone.length === 10 && /^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+91${formattedPhone}`;
+          } else if (/^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+${formattedPhone}`;
+          }
+        }
+        signUpParams.phone = formattedPhone;
+      }
+
+      const { data, error } = await supabase.auth.signUp(signUpParams);
 
       if (error) throw error;
       
@@ -188,11 +206,7 @@ export default function AuthPage() {
         router.push('/dashboard');
       }, 1500);
     } catch (err: any) {
-      // Fallback local memory claim
-      setSuccessMsg('Claimed sandbox profile. Welcome!');
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1500);
+      setErrorMsg(err.message || 'Error creating account. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -210,11 +224,8 @@ export default function AuthPage() {
 
     setLoading(true);
 
-    const calculatedEmail = signUpEmail || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`;
-
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: calculatedEmail,
+      const signUpParams: any = {
         password: password || 'student123',
         options: {
           data: {
@@ -231,7 +242,23 @@ export default function AuthPage() {
             dob: dob
           }
         }
-      });
+      };
+
+      if (signUpMethod === 'email') {
+        signUpParams.email = signUpEmail || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`;
+      } else {
+        let formattedPhone = signUpPhone.trim();
+        if (!formattedPhone.startsWith('+')) {
+          if (formattedPhone.length === 10 && /^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+91${formattedPhone}`;
+          } else if (/^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+${formattedPhone}`;
+          }
+        }
+        signUpParams.phone = formattedPhone;
+      }
+
+      const { data, error } = await supabase.auth.signUp(signUpParams);
 
       if (error) throw error;
 
@@ -240,10 +267,7 @@ export default function AuthPage() {
         router.push('/dashboard');
       }, 1500);
     } catch (err: any) {
-      setSuccessMsg('Sandbox profile registered locally. Redirecting...');
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1500);
+      setErrorMsg(err.message || 'Error registering profile. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -261,11 +285,8 @@ export default function AuthPage() {
 
     setLoading(true);
 
-    const calculatedEmail = signUpEmail || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@solo.me`;
-
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: calculatedEmail,
+      const signUpParams: any = {
         password: password || 'student123',
         options: {
           data: {
@@ -277,7 +298,23 @@ export default function AuthPage() {
             interests: soloInterests
           }
         }
-      });
+      };
+
+      if (signUpMethod === 'email') {
+        signUpParams.email = signUpEmail || `${firstName.toLowerCase()}.${lastName.toLowerCase()}@solo.me`;
+      } else {
+        let formattedPhone = signUpPhone.trim();
+        if (!formattedPhone.startsWith('+')) {
+          if (formattedPhone.length === 10 && /^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+91${formattedPhone}`;
+          } else if (/^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+${formattedPhone}`;
+          }
+        }
+        signUpParams.phone = formattedPhone;
+      }
+
+      const { data, error } = await supabase.auth.signUp(signUpParams);
 
       if (error) throw error;
 
@@ -286,10 +323,7 @@ export default function AuthPage() {
         router.push('/dashboard');
       }, 1500);
     } catch (err: any) {
-      setSuccessMsg('Sandbox solo profile active. Entering...');
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1500);
+      setErrorMsg(err.message || 'Error launching solo account.');
     } finally {
       setLoading(false);
     }
@@ -302,10 +336,22 @@ export default function AuthPage() {
     setSuccessMsg('');
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+      const signInParams: any = { password };
+      if (loginMethod === 'email') {
+        signInParams.email = email;
+      } else {
+        let formattedPhone = phone.trim();
+        if (!formattedPhone.startsWith('+')) {
+          if (formattedPhone.length === 10 && /^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+91${formattedPhone}`;
+          } else if (/^\d+$/.test(formattedPhone)) {
+            formattedPhone = `+${formattedPhone}`;
+          }
+        }
+        signInParams.phone = formattedPhone;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword(signInParams);
 
       if (error) throw error;
 
@@ -326,30 +372,25 @@ export default function AuthPage() {
         }, 1000);
       }
     } catch (err: any) {
-      // Local fallback for offline testing
-      if (email === 'admin@psymetric.com' && password === 'admin') {
+      // Local fallback ONLY for local testing with exact test accounts
+      if (loginMethod === 'email' && email === 'admin@psymetric.com' && password === 'admin') {
         setSuccessMsg('Sandbox Super Admin access granted.');
         setTimeout(() => {
           router.push('/admin');
         }, 1000);
-      } else if (email === 'school@psymetric.com' && password === 'school') {
+      } else if (loginMethod === 'email' && email === 'school@psymetric.com' && password === 'school') {
         setSuccessMsg('Sandbox School Admin access granted.');
         setTimeout(() => {
-          // Send to school admin page
           router.push('/admin');
         }, 1000);
-      } else if (password) {
-        setSuccessMsg('Offline login approved.');
-        setTimeout(() => {
-          router.push('/dashboard');
-        }, 1000);
       } else {
-        setErrorMsg('Invalid credentials. Use admin@psymetric.com (password: admin) for testing.');
+        setErrorMsg(err.message || 'Invalid credentials.');
       }
     } finally {
       setLoading(false);
     }
   };
+
 
   const toggleInterest = (interest: string) => {
     setSoloInterests(prev => 
@@ -415,20 +456,55 @@ export default function AuthPage() {
               </div>
 
               <form onSubmit={handleSignIn} className="space-y-5">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
-                    <input
-                      type="email"
-                      required
-                      placeholder="name@school.edu"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
-                    />
-                  </div>
+                {/* Method Selector */}
+                <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setLoginMethod('email')}
+                    className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${loginMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                  >
+                    Email Address
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoginMethod('phone')}
+                    className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${loginMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                  >
+                    Phone Number
+                  </button>
                 </div>
+
+                {loginMethod === 'email' ? (
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
+                      <input
+                        type="email"
+                        required
+                        placeholder="name@school.edu"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
+                    <div className="relative">
+                      <Smartphone className="absolute left-3 top-3.5 w-5 h-5 text-zinc-500" />
+                      <input
+                        type="tel"
+                        required
+                        placeholder="+919876543210"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 pl-11 pr-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Password</label>
@@ -572,17 +648,49 @@ export default function AuthPage() {
                         </p>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="name@school.edu"
-                          value={signUpEmail}
-                          onChange={(e) => setSignUpEmail(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
-                        />
+                      {/* Method Selector */}
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                        <button
+                          type="button"
+                          onClick={() => setSignUpMethod('email')}
+                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                        >
+                          Email
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSignUpMethod('phone')}
+                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                        >
+                          Phone Number
+                        </button>
                       </div>
+
+                      {signUpMethod === 'email' ? (
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="name@school.edu"
+                            value={signUpEmail}
+                            onChange={(e) => setSignUpEmail(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
+                          <input
+                            type="tel"
+                            required
+                            placeholder="+919876543210"
+                            value={signUpPhone}
+                            onChange={(e) => setSignUpPhone(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                          />
+                        </div>
+                      )}
 
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Set Account Password</label>
@@ -907,17 +1015,49 @@ export default function AuthPage() {
                         <p><strong className="text-teal-400">Student Name:</strong> {firstName} {lastName}</p>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="student@school.edu"
-                          value={signUpEmail}
-                          onChange={(e) => setSignUpEmail(e.target.value)}
-                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
-                        />
+                      {/* Method Selector */}
+                      <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                        <button
+                          type="button"
+                          onClick={() => setSignUpMethod('email')}
+                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-zinc-500 hover:text-white'}`}
+                        >
+                          Email
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSignUpMethod('phone')}
+                          className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-zinc-500 hover:text-white'}`}
+                        >
+                          Phone Number
+                        </button>
                       </div>
+
+                      {signUpMethod === 'email' ? (
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Email Address</label>
+                          <input
+                            type="email"
+                            required
+                            placeholder="student@school.edu"
+                            value={signUpEmail}
+                            onChange={(e) => setSignUpEmail(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Phone Number</label>
+                          <input
+                            type="tel"
+                            required
+                            placeholder="+919876543210"
+                            value={signUpPhone}
+                            onChange={(e) => setSignUpPhone(e.target.value)}
+                            className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                          />
+                        </div>
+                      )}
 
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Password</label>
@@ -1060,17 +1200,49 @@ export default function AuthPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-zinc-500 uppercase">Email Address</label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="name@example.com"
-                      value={signUpEmail}
-                      onChange={(e) => setSignUpEmail(e.target.value)}
-                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
+                  {/* Method Selector */}
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-zinc-900 rounded-xl mb-4">
+                    <button
+                      type="button"
+                      onClick={() => setSignUpMethod('email')}
+                      className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'email' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                    >
+                      Email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignUpMethod('phone')}
+                      className={`text-xs py-2 font-bold uppercase rounded-lg transition-all ${signUpMethod === 'phone' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'text-zinc-500 hover:text-white'}`}
+                    >
+                      Phone Number
+                    </button>
                   </div>
+
+                  {signUpMethod === 'email' ? (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase">Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="name@example.com"
+                        value={signUpEmail}
+                        onChange={(e) => setSignUpEmail(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className="text-xs font-semibold text-zinc-500 uppercase">Phone Number</label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="+919876543210"
+                        value={signUpPhone}
+                        onChange={(e) => setSignUpPhone(e.target.value)}
+                        className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                  )}
 
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-zinc-500 uppercase">Password</label>
