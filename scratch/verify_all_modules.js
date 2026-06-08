@@ -18,6 +18,7 @@ const UI_FILES = [
   'src/app/page.tsx',
   'src/app/layout.tsx',
   'src/app/auth/page.tsx',
+  'src/app/auth/reset-password/page.tsx',
   'src/app/assessment/page.tsx',
   'src/app/admin/page.tsx',
   'src/app/parent/page.tsx'
