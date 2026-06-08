@@ -56,6 +56,7 @@ export default function AuthPage() {
   // Login inputs
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Access Code input
   const [accessCode, setAccessCode] = useState('');
@@ -150,9 +151,15 @@ export default function AuthPage() {
 
   const handleClaimAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
+
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
 
     try {
       // Offline fallback profile creation
@@ -190,9 +197,15 @@ export default function AuthPage() {
 
   const handleGuidedSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
+
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
 
     const calculatedEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@psymetric.me`;
 
@@ -235,9 +248,15 @@ export default function AuthPage() {
 
   const handleSoloSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
+
+    if (password !== confirmPassword) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
+    setLoading(true);
 
     const calculatedEmail = `${firstName.toLowerCase()}.${lastName.toLowerCase()}@solo.me`;
 
@@ -436,7 +455,7 @@ export default function AuthPage() {
                 <p>
                   First time evaluator?{' '}
                   <button
-                    onClick={() => { setIsSignUp(true); setSignUpFlow('options'); }}
+                    onClick={() => { setIsSignUp(true); setSignUpFlow('options'); setPassword(''); setConfirmPassword(''); }}
                     className="text-purple-400 hover:text-purple-300 font-medium hover:underline"
                   >
                     Create Account
@@ -501,7 +520,7 @@ export default function AuthPage() {
                   </div>
 
                   <div className="text-center text-sm text-zinc-500 pt-4 border-t border-zinc-900">
-                    <button onClick={() => setIsSignUp(false)} className="hover:underline">Already registered? Sign In</button>
+                    <button onClick={() => { setIsSignUp(false); setPassword(''); setConfirmPassword(''); }} className="hover:underline">Already registered? Sign In</button>
                   </div>
                 </div>
               )}
@@ -558,6 +577,18 @@ export default function AuthPage() {
                           placeholder="••••••••"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Confirm Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
                           className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-purple-500 focus:ring-1"
                         />
                       </div>
@@ -870,6 +901,18 @@ export default function AuthPage() {
                         />
                       </div>
 
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block">Confirm Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          className="w-full bg-black/40 border border-zinc-800 rounded-xl py-3 px-4 text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500"
+                        />
+                      </div>
+
                       <button
                         type="submit"
                         disabled={loading}
@@ -995,6 +1038,18 @@ export default function AuthPage() {
                       placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-zinc-500 uppercase">Confirm Password</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
                       className="w-full bg-black/40 border border-zinc-800 rounded-xl py-2.5 px-3 text-xs text-white"
                     />
                   </div>
