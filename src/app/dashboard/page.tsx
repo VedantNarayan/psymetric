@@ -179,19 +179,31 @@ export default function StudentDashboard() {
           .order('started_at', { ascending: false })
           .limit(1);
 
+        const meta = authSession.user.user_metadata;
+        const isIndividual = meta?.user_type === 'normal_user';
+
         if (prof) {
           setProfile({
             full_name: prof.full_name || 'Student User',
             age_tier: prof.age_tier || '16-18',
-            institution_type: prof.institution_type || 'Individual',
-            school_name: prof.institution_type === 'School' ? 'DAV Public School' : 'Individual Portal',
-            class: prof.class_id ? '10' : null,
-            section: 'A',
-            stream: null,
+            institution_type: isIndividual ? 'Individual' : 'School',
+            school_name: isIndividual ? 'Individual Portal' : (meta?.school_name || 'School Portal'),
+            class: isIndividual ? null : meta?.class,
+            section: isIndividual ? null : meta?.section,
+            stream: isIndividual ? null : meta?.stream,
             avatar_url: prof.avatar_url
           });
         } else {
-          setProfile(MOCK_PROFILE);
+          setProfile({
+            full_name: meta?.full_name || MOCK_PROFILE.full_name,
+            age_tier: meta?.age_group || MOCK_PROFILE.age_tier,
+            institution_type: isIndividual ? 'Individual' : 'School',
+            school_name: isIndividual ? 'Individual Portal' : (meta?.school_name || MOCK_PROFILE.school_name),
+            class: isIndividual ? null : (meta?.class || MOCK_PROFILE.class),
+            section: isIndividual ? null : (meta?.section || MOCK_PROFILE.section),
+            stream: isIndividual ? null : MOCK_PROFILE.stream,
+            avatar_url: null
+          });
         }
 
         if (activeSession && activeSession.length > 0) {
@@ -211,11 +223,20 @@ export default function StudentDashboard() {
               holland_percentages: mappedPercentages,
               ai_analysis: MOCK_REPORT.ai_analysis
             });
+            setXp(420);
+            setLevel(3);
+            setStreak(5);
           } else {
-            setReport(MOCK_REPORT);
+            setReport(null);
+            setXp(0);
+            setLevel(1);
+            setStreak(0);
           }
         } else {
-          setReport(MOCK_REPORT);
+          setReport(null);
+          setXp(0);
+          setLevel(1);
+          setStreak(0);
         }
       } catch (err) {
         console.warn("Error fetching live data, utilizing sandbox seed assets:", err);
@@ -315,13 +336,16 @@ export default function StudentDashboard() {
   }
 
   // Determine dominant personality traits for title
+  const hasReport = !!report;
   const sortedTraits = Object.entries(report?.holland_percentages || {})
     .sort((a: any, b: any) => b[1] - a[1])
     .map(entry => entry[0]);
 
-  const primaryTrait = sortedTraits[0] || 'The Thinker';
-  const secondaryTrait = sortedTraits[1] || 'The Creator';
-  const characterTitle = `${primaryTrait.replace('The ', '')}-${secondaryTrait.replace('The ', '')} Hybrid`;
+  const primaryTrait = sortedTraits[0] || '';
+  const secondaryTrait = sortedTraits[1] || '';
+  const characterTitle = hasReport 
+    ? `${primaryTrait.replace('The ', '')}-${secondaryTrait.replace('The ', '')} Hybrid` 
+    : 'Quest Explorer (Pending)';
 
   // Radar SVG Math
   const cx = 150;
@@ -338,12 +362,12 @@ export default function StudentDashboard() {
   ];
 
   const radarPoints = axes.map((axis, i) => {
-    const percentage = ((report?.holland_percentages?.[axis.name] as number) || 50) / 100;
+    const percentage = hasReport ? (((report?.holland_percentages?.[axis.name] as number) || 0) / 100) : 0;
     const r = percentage * maxRadius;
     const angle = (i * 2 * Math.PI) / 6 - Math.PI / 2;
     const x = cx + r * Math.cos(angle);
     const y = cy + r * Math.sin(angle);
-    return { x, y, name: axis.name, score: Math.round(percentage * 100) };
+    return { x, y, name: axis.name, score: hasReport ? Math.round(percentage * 100) : 0 };
   });
 
   const polygonPointsString = radarPoints.map(p => `${p.x},${p.y}`).join(' ');
@@ -618,7 +642,9 @@ export default function StudentDashboard() {
                     </div>
                   </div>
                   <div className="flex-1 text-center sm:text-left">
-                    <span className="text-[9px] font-extrabold text-purple-400 tracking-widest uppercase">Student Profile</span>
+                    <span className="text-[9px] font-extrabold text-purple-400 tracking-widest uppercase">
+                      {profile?.institution_type === 'School' ? 'Student Profile' : 'Individual Profile'}
+                    </span>
                     <h2 className="text-xl font-black text-white">{profile?.full_name}</h2>
                     <p className="text-xs text-teal-300 font-semibold flex items-center justify-center sm:justify-start gap-1 mt-0.5">
                       <GraduationCap className="w-3.5 h-3.5" /> {characterTitle}
@@ -628,7 +654,9 @@ export default function StudentDashboard() {
                     <span className="font-bold block text-white flex items-center gap-1.5">
                       <Building className="w-3.5 h-3.5 text-zinc-500" /> {profile?.school_name}
                     </span>
-                    <span className="text-zinc-500 block mt-0.5">Class {profile?.class || '10'}-{profile?.section || 'A'}</span>
+                    {profile?.class && (
+                      <span className="text-zinc-500 block mt-0.5">Class {profile.class}{profile.section ? `-${profile.section}` : ''}</span>
+                    )}
                   </div>
                 </div>
 
@@ -680,48 +708,51 @@ export default function StudentDashboard() {
                         })}
 
                         {/* Filled constellation area */}
-                        <polygon
-                          points={polygonPointsString}
-                          fill="rgba(157, 78, 221, 0.2)"
-                          stroke="url(#constellation-grad)"
-                          strokeWidth="2.5"
-                        />
+                        {hasReport && (
+                          <polygon
+                            points={polygonPointsString}
+                            fill="rgba(157, 78, 221, 0.2)"
+                            stroke="url(#constellation-grad)"
+                            strokeWidth="2.5"
+                          />
+                        )}
 
                         {/* Interactive nodes */}
-                        {radarPoints.map((pt, i) => (
-                          <g key={i}>
-                            <circle
-                              cx={pt.x}
-                              cy={pt.y}
-                              r="4.5"
-                              fill="#030303"
-                              stroke={axes[i].color}
-                              strokeWidth="2.5"
-                              className="cursor-pointer hover:scale-125 transition-transform"
-                            />
-                            {/* Text labels */}
-                            {(() => {
-                              const angle = (i * 2 * Math.PI) / 6 - Math.PI / 2;
-                              const labelRadius = maxRadius + 22;
-                              const lx = cx + labelRadius * Math.cos(angle);
-                              const ly = cy + labelRadius * Math.sin(angle);
-                              return (
-                                <text
-                                  x={lx}
-                                  y={ly}
-                                  textAnchor="middle"
-                                  alignmentBaseline="middle"
-                                  fill="#888"
-                                  fontSize="9.5"
-                                  fontWeight="bold"
-                                  fontFamily="inherit"
-                                >
-                                  {pt.name}
-                                </text>
-                              );
-                            })()}
-                          </g>
+                        {hasReport && radarPoints.map((pt, i) => (
+                          <circle
+                            key={i}
+                            cx={pt.x}
+                            cy={pt.y}
+                            r="4.5"
+                            fill="#030303"
+                            stroke={axes[i].color}
+                            strokeWidth="2.5"
+                            className="cursor-pointer hover:scale-125 transition-transform"
+                          />
                         ))}
+
+                        {/* Text labels */}
+                        {axes.map((axis, i) => {
+                          const angle = (i * 2 * Math.PI) / 6 - Math.PI / 2;
+                          const labelRadius = maxRadius + 22;
+                          const lx = cx + labelRadius * Math.cos(angle);
+                          const ly = cy + labelRadius * Math.sin(angle);
+                          return (
+                            <text
+                              key={i}
+                              x={lx}
+                              y={ly}
+                              textAnchor="middle"
+                              alignmentBaseline="middle"
+                              fill="#888"
+                              fontSize="9.5"
+                              fontWeight="bold"
+                              fontFamily="inherit"
+                            >
+                              {axis.name}
+                            </text>
+                          );
+                        })}
 
                         <defs>
                           <linearGradient id="constellation-grad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -741,18 +772,18 @@ export default function StudentDashboard() {
                       </h3>
                       
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 rounded-xl bg-zinc-950/40 border border-zinc-900 flex items-center gap-2">
+                        <div className={`p-3 rounded-xl bg-zinc-950/40 border border-zinc-900 flex items-center gap-2 transition-opacity duration-300 ${hasReport ? '' : 'opacity-40'}`}>
                           <span className="text-lg">⚡</span>
                           <div>
                             <span className="text-xs font-bold text-white block">Speed Runner</span>
-                            <span className="text-[8px] text-zinc-500">Solved puzzle under 10s</span>
+                            <span className="text-[8px] text-zinc-500">{hasReport ? 'Unlocked!' : 'Solved puzzle under 10s'}</span>
                           </div>
                         </div>
-                        <div className="p-3 rounded-xl bg-zinc-950/40 border border-zinc-900 flex items-center gap-2 opacity-40">
+                        <div className={`p-3 rounded-xl bg-zinc-950/40 border border-zinc-900 flex items-center gap-2 transition-opacity duration-300 ${solvedPuzzleOption ? '' : 'opacity-40'}`}>
                           <span className="text-lg">💡</span>
                           <div>
                             <span className="text-xs font-bold text-white block">Logic Master</span>
-                            <span className="text-[8px] text-zinc-500">Solve 10 daily puzzles</span>
+                            <span className="text-[8px] text-zinc-500">{solvedPuzzleOption ? 'Unlocked!' : 'Solve 10 daily puzzles'}</span>
                           </div>
                         </div>
                       </div>
@@ -762,15 +793,27 @@ export default function StudentDashboard() {
                       <div className="absolute top-0 right-0 w-32 h-32 bg-teal-500/5 rounded-full blur-2xl" />
                       <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3">🎯 Your Career Sweet Spot</h3>
                       <p className="text-xs text-zinc-400 leading-relaxed">
-                        Based on your high alignment with **The Creator** and **The Thinker** dimensions, your natural zone lies in innovative platforms.
+                        {hasReport 
+                          ? `Based on your high alignment with **The ${primaryTrait.replace('The ', '')}** and **The ${secondaryTrait.replace('The ', '')}** dimensions, your natural zone lies in innovative platforms.`
+                          : 'Your career sweet spot will unlock once you complete the primary character quest. Start the quest to begin your discovery!'}
                       </p>
-                      <button 
-                        onClick={() => setActiveTab('careers')}
-                        className="mt-4 flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 font-bold uppercase tracking-wider"
-                      >
-                        <span>Explore Matches</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      {hasReport ? (
+                        <button 
+                          onClick={() => setActiveTab('careers')}
+                          className="mt-4 flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 font-bold uppercase tracking-wider"
+                        >
+                          <span>Explore Matches</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => setActiveTab('quest')}
+                          className="mt-4 flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300 font-bold uppercase tracking-wider"
+                        >
+                          <span>Start Quest</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -964,7 +1007,11 @@ export default function StudentDashboard() {
                       <div>
                         <div className="flex justify-between items-start gap-2 mb-2">
                           <span className="text-[10px] font-bold text-zinc-500 uppercase">{car.dimension}</span>
-                          <span className="text-[10px] font-bold text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded-full">{car.match}% Match</span>
+                          {hasReport ? (
+                            <span className="text-[10px] font-bold text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded-full">{car.match}% Match</span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-zinc-500 bg-zinc-500/10 px-2 py-0.5 rounded-full">Unlock Match</span>
+                          )}
                         </div>
                         <h4 className="font-extrabold text-white text-sm group-hover:text-teal-300 transition-colors">{car.title}</h4>
                         <p className="text-[11px] text-zinc-500 mt-2 line-clamp-2">{car.description}</p>
@@ -990,7 +1037,11 @@ export default function StudentDashboard() {
                       >
                         <div className="space-y-6">
                           <div className="flex justify-between items-center border-b border-white/5 pb-4">
-                            <span className="text-[10px] font-bold text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded-full">{selectedCareer.match}% Profile Match</span>
+                            {hasReport ? (
+                              <span className="text-[10px] font-bold text-teal-400 bg-teal-400/10 px-2 py-0.5 rounded-full">{selectedCareer.match}% Profile Match</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-zinc-500 bg-zinc-500/10 px-2 py-0.5 rounded-full">Evaluation Pending</span>
+                            )}
                             <button onClick={() => setSelectedCareer(null)} className="text-zinc-500 hover:text-white">
                               <X className="w-5 h-5" />
                             </button>
@@ -1098,8 +1149,8 @@ export default function StudentDashboard() {
                         })}
 
                         {/* Skill levels points */}
-                        {(() => {
-                          const skillVals = [80, 90, 75, 50, 60]; // Logic, Creativity, Empathy, Documentation, Leadership
+                        {hasReport && (() => {
+                          const skillVals = [80, 90, 75, 50, 60];
                           const pts = skillVals.map((val, i) => {
                             const r = (val / 100) * maxRadius;
                             const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
@@ -1199,29 +1250,35 @@ export default function StudentDashboard() {
                 {/* Course Recommendations */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Personalized Course Recommendations</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800 flex justify-between items-center">
-                      <div>
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase block">Interactive Interaction Design</span>
-                        <span className="text-xs font-bold text-white block mt-0.5">Interaction Design Specialization</span>
-                        <span className="text-[9px] text-teal-400 font-bold block mt-1">Recommended for UX Architect path</span>
+                  {hasReport ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800 flex justify-between items-center">
+                        <div>
+                          <span className="text-[9px] text-zinc-500 font-bold uppercase block">Interactive Interaction Design</span>
+                          <span className="text-xs font-bold text-white block mt-0.5">Interaction Design Specialization</span>
+                          <span className="text-[9px] text-teal-400 font-bold block mt-1">Recommended for UX Architect path</span>
+                        </div>
+                        <a href="https://www.coursera.org" target="_blank" rel="noreferrer" className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white">
+                          <ArrowUpRight className="w-4 h-4" />
+                        </a>
                       </div>
-                      <a href="https://www.coursera.org" target="_blank" rel="noreferrer" className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white">
-                        <ArrowUpRight className="w-4 h-4" />
-                      </a>
-                    </div>
 
-                    <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800 flex justify-between items-center">
-                      <div>
-                        <span className="text-[9px] text-zinc-500 font-bold uppercase block">Game Engineering</span>
-                        <span className="text-xs font-bold text-white block mt-0.5">Introduction to C++ & Unreal Engine</span>
-                        <span className="text-[9px] text-teal-400 font-bold block mt-1">Recommended for Game Mechanics path</span>
+                      <div className="p-4 rounded-xl bg-zinc-900/40 border border-zinc-800 flex justify-between items-center">
+                        <div>
+                          <span className="text-[9px] text-zinc-500 font-bold uppercase block">Game Engineering</span>
+                          <span className="text-xs font-bold text-white block mt-0.5">Introduction to C++ & Unreal Engine</span>
+                          <span className="text-[9px] text-teal-400 font-bold block mt-1">Recommended for Game Mechanics path</span>
+                        </div>
+                        <a href="https://www.coursera.org" target="_blank" rel="noreferrer" className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white">
+                          <ArrowUpRight className="w-4 h-4" />
+                        </a>
                       </div>
-                      <a href="https://www.coursera.org" target="_blank" rel="noreferrer" className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white">
-                        <ArrowUpRight className="w-4 h-4" />
-                      </a>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="p-8 text-center glassmorphism rounded-xl border border-white/5 text-zinc-500 text-xs font-semibold">
+                      Complete your primary character quest to unlock personalized course recommendations.
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -1277,7 +1334,7 @@ export default function StudentDashboard() {
                       {MOCK_MENTORS.map(men => (
                         <div key={men.id} className="p-3.5 rounded-xl bg-zinc-950/40 border border-zinc-900 flex justify-between items-center hover:border-zinc-800 transition-colors">
                           <div>
-                            <span className="text-[10px] text-teal-400 font-bold">{men.match}</span>
+                            <span className="text-[10px] text-teal-400 font-bold">{hasReport ? men.match : 'Unlock Compatibility'}</span>
                             <span className="text-xs font-bold text-white block mt-0.5">{men.name}</span>
                             <span className="text-[9px] text-zinc-500 block">{men.role}</span>
                           </div>
